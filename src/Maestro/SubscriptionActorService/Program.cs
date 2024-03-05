@@ -16,6 +16,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Octokit;
+using ProductConstructionService.Client;
 
 namespace SubscriptionActorService;
 
@@ -75,6 +76,16 @@ public static class Program
             {
                 o.Tokens.Add(token.GetValue<string>("Account"), token.GetValue<string>("Token"));
             }
+        });
+        services.AddSingleton<IProductConstructionServiceApi>(s =>
+        {
+            var config = s.GetRequiredService<IConfiguration>();
+            var baseUri = config.GetValue<string>("ProductConstructionService:BaseUri");
+            var token = config.GetValue<string>("ProductConstructionService:Token");
+
+            return string.IsNullOrEmpty(token)
+                ? ApiFactory.GetAnonymous(baseUri)
+                : ApiFactory.GetAuthenticated(baseUri, token);
         });
 
         services.AddMergePolicies();

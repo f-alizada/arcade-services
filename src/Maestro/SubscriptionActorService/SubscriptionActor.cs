@@ -226,7 +226,8 @@ namespace SubscriptionActorService
                 build.Id, 
                 build.GitHubRepository ?? build.AzureDevOpsRepository, 
                 build.Commit, 
-                assets);
+                assets,
+                subscription.SourceEnabled);
 
             Logger.LogInformation($"Asset update complete for {SubscriptionId}");
 

@@ -8,7 +8,6 @@ using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
-using Kusto.Cloud.Platform.Utils;
 using Maestro.Contracts;
 using Maestro.Data;
 using Maestro.Data.Models;
@@ -19,7 +18,10 @@ using Microsoft.DotNet.ServiceFabric.ServiceHost.Actors;
 using Microsoft.Extensions.Logging;
 using Microsoft.ServiceFabric.Actors;
 using Microsoft.ServiceFabric.Actors.Runtime;
+using Microsoft.ServiceFabric.Data;
+using ProductConstructionService.Client;
 using SubscriptionActorService.StateModel;
+
 using Asset = Maestro.Contracts.Asset;
 using AssetData = Microsoft.DotNet.Maestro.Client.Models.AssetData;
 
@@ -41,7 +43,7 @@ namespace SubscriptionActorService
                 throw new NotImplementedException();
             }
 
-            public Task UpdateAssetsAsync(Guid subscriptionId, int buildId, string sourceRepo, string sourceSha, List<Asset> assets)
+            public Task UpdateAssetsAsync(Guid subscriptionId, int buildId, string sourceRepo, string sourceSha, List<Asset> assets, bool isCodeFlow)
             {
                 throw new NotImplementedException();
             }
@@ -63,6 +65,7 @@ namespace SubscriptionActorService
         private readonly BuildAssetRegistryContext _context;
         private readonly IRemoteFactory _darcFactory;
         private readonly IBasicBarClient _barClient;
+        private readonly IProductConstructionServiceApi _pcsClient;
         private readonly ICoherencyUpdateResolver _coherencyUpdateResolver;
         private readonly ILoggerFactory _loggerFactory;
         private readonly IActionRunner _actionRunner;
@@ -85,6 +88,7 @@ namespace SubscriptionActorService
             BuildAssetRegistryContext context,
             IRemoteFactory darcFactory,
             IBasicBarClient barClient,
+            IProductConstructionServiceApi pcsClient,
             ICoherencyUpdateResolver coherencyUpdateResolver,
             ILoggerFactory loggerFactory,
             IActionRunner actionRunner,
@@ -95,6 +99,7 @@ namespace SubscriptionActorService
             _context = context;
             _darcFactory = darcFactory;
             _barClient = barClient;
+            _pcsClient = pcsClient;
             _coherencyUpdateResolver = coherencyUpdateResolver;
             _loggerFactory = loggerFactory;
             _actionRunner = actionRunner;
@@ -119,6 +124,7 @@ namespace SubscriptionActorService
                     _context,
                     _darcFactory,
                     _barClient,
+                    _pcsClient,
                     _loggerFactory,
                     _actionRunner,
                     _subscriptionActorFactory,
@@ -133,6 +139,7 @@ namespace SubscriptionActorService
                     _context,
                     _darcFactory,
                     _barClient,
+                    _pcsClient,
                     _loggerFactory,
                     _actionRunner,
                     _subscriptionActorFactory),
@@ -157,9 +164,9 @@ namespace SubscriptionActorService
             return Implementation!.RunActionAsync(method, arguments);
         }
 
-        public Task UpdateAssetsAsync(Guid subscriptionId, int buildId, string sourceRepo, string sourceSha, List<Asset> assets)
+        public Task UpdateAssetsAsync(Guid subscriptionId, int buildId, string sourceRepo, string sourceSha, List<Asset> assets, bool isCodeFlow)
         {
-            return Implementation!.UpdateAssetsAsync(subscriptionId, buildId, sourceRepo, sourceSha, assets);
+            return Implementation!.UpdateAssetsAsync(subscriptionId, buildId, sourceRepo, sourceSha, assets, isCodeFlow);
         }
 
         public async Task ReceiveReminderAsync(string reminderName, byte[] state, TimeSpan dueTime, TimeSpan period)
@@ -212,6 +219,7 @@ namespace SubscriptionActorService
             BuildAssetRegistryContext context,
             IRemoteFactory darcFactory,
             IBasicBarClient barClient,
+            IProductConstructionServiceApi pcsClient,
             ILoggerFactory loggerFactory,
             IActionRunner actionRunner,
             IActorProxyFactory<ISubscriptionActor> subscriptionActorFactory)
@@ -260,9 +268,9 @@ namespace SubscriptionActorService
             return _actionRunner.RunAction(this, method, arguments);
         }
 
-        Task IPullRequestActor.UpdateAssetsAsync(Guid subscriptionId, int buildId, string sourceRepo, string sourceSha, List<Asset> assets)
+        Task IPullRequestActor.UpdateAssetsAsync(Guid subscriptionId, int buildId, string sourceRepo, string sourceSha, List<Asset> assets, bool isCodeFlow)
         {
-            return _actionRunner.ExecuteAction(() => UpdateAssetsAsync(subscriptionId, buildId, sourceRepo, sourceSha, assets));
+            return _actionRunner.ExecuteAction(() => UpdateAssetsAsync(subscriptionId, buildId, sourceRepo, sourceSha, assets, isCodeFlow));
         }
 
         protected abstract Task<(string repository, string branch)> GetTargetAsync();
@@ -312,6 +320,12 @@ namespace SubscriptionActorService
 
             (InProgressPullRequest? pr, bool canUpdate) = await SynchronizeInProgressPullRequestAsync();
 
+            // Code flow updates are handled separetely
+            if (updates.Any(u => u.IsCodeFlow))
+            {
+                return await ProcessPendingCodeFlowUpdatesAsync(pr, canUpdate, updates);
+            }
+
             var subscriptionIds = updates.Count > 1
                 ? "subscriptions " + string.Join(", ", updates.Select(u => u.SubscriptionId).Distinct())
                 : "subscription " + updates[0].SubscriptionId;
@@ -347,6 +361,68 @@ namespace SubscriptionActorService
             await _pullRequestUpdateState.UnsetReminderAsync();
 
             return ActionResult.Create(true, "Pending updates applied. " + result);
+        }
+
+        /// <summary>
+        /// Alternative to ProcessPendingUpdatesAsync that is used in the code flow (VMR) scenario.
+        /// </summary>
+        private async Task<ActionResult<bool>> ProcessPendingCodeFlowUpdatesAsync(InProgressPullRequest? pr, bool canUpdate, List<UpdateAssetsParameters> updates)
+        {
+            // TODO https://github.com/dotnet/arcade-services/issues/3378: Support batched PRs for code flow updates
+            if (updates.Count > 1)
+            {
+                _logger.LogWarning("Code flow updates cannot be batched with other updates. Will process first update only.");
+            }
+
+            var update = updates.First();
+
+            string result;
+            if (pr == null)
+            {
+                var codeFlowUpdate = await _stateManager.TryGetCodeFlowStatus();
+
+                IRemote remote = await _remoteFactory.GetRemoteAsync(update.SourceRepo, _logger);
+                (string targetRepository, string targetBranch) = await GetTargetAsync();
+
+                // Check if the PR was created by PCS already
+                if (await remote.BranchExistsAsync(targetRepository, targetBranch))
+                {
+                    // Create regular dependency update PR
+                    string? prUrl = await CreatePullRequestAsync(updates);
+                    result = prUrl == null
+                        ? $"No changes required for {subscriptionIds}, no pull request created"
+                        : $"Pull Request '{prUrl}' for {subscriptionIds} created";
+
+                    _logger.LogInformation(result);
+
+                    await _stateManager.RemovePullRequestUpdatesAsync();
+                    await _reminders.RemovePullRequestUpdatesAsync();
+
+                    return ActionResult.Create(true, "Pending updates applied. " + result);
+                }
+
+
+                await _stateManager.RemovePullRequestUpdatesAsync();
+                await _reminders.RemovePullRequestUpdatesAsync();
+
+                return ActionResult.Create(true, "Pending updates applied. " + result);
+            }
+
+            if (!canUpdate)
+            {
+                _logger.LogInformation("PR {url} for {subscriptions} cannot be updated", pr.Url, subscriptionIds);
+                return ActionResult.Create(false, "PR cannot be updated.");
+            }
+
+            await UpdatePullRequestAsync(pr, updates);
+            result = $"Pull Request '{pr.Url}' updated.";
+            _logger.LogInformation("Pull Request {url} for {subscriptions} was updated", pr.Url, subscriptionIds);
+
+            await _stateManager.RemovePullRequestUpdatesAsync();
+            await _reminders.RemovePullRequestUpdatesAsync();
+
+            return ActionResult.Create(true, "Pending updates applied. " + result);
+
         }
 
         protected virtual Task TagSourceRepositoryGitHubContactsIfPossibleAsync(InProgressPullRequest pr)
@@ -632,7 +708,8 @@ namespace SubscriptionActorService
             int buildId,
             string sourceRepo,
             string sourceSha,
-            List<Asset> assets)
+            List<Asset> assets,
+            bool isCodeFlow)
         {
             (InProgressPullRequest? pr, bool canUpdate) = await SynchronizeInProgressPullRequestAsync();
 
@@ -644,6 +721,7 @@ namespace SubscriptionActorService
                 SourceRepo = sourceRepo,
                 Assets = assets,
                 IsCoherencyUpdate = false,
+                IsCodeFlow = isCodeFlow,
             };
 
             try
@@ -742,7 +820,6 @@ namespace SubscriptionActorService
         /// <summary>
         ///     Creates a pull request from the given updates.
         /// </summary>
-        /// <param name="updates"></param>
         /// <returns>The pull request url when a pr was created; <see langref="null" /> if no PR is necessary</returns>
         private async Task<string?> CreatePullRequestAsync(List<UpdateAssetsParameters> updates)
         {
@@ -769,7 +846,10 @@ namespace SubscriptionActorService
                     targetRepository,
                     newBranchName);
 
-                var inProgressPr = new InProgressPullRequest {
+                var inProgressPr = new InProgressPullRequest
+                {
+                    PrBranch = newBranchName,
+
                     // Calculate the subscriptions contained within the
                     // update. Coherency updates do not have subscription info.
                     ContainedSubscriptions = repoDependencyUpdate.RequiredUpdates
@@ -803,7 +883,7 @@ namespace SubscriptionActorService
                         Title = await ComputePullRequestTitleAsync(inProgressPr, targetBranch),
                         Description = description,
                         BaseBranch = targetBranch,
-                        HeadBranch = newBranchName
+                        HeadBranch = newBranchName,
                     });
 
                 if (!string.IsNullOrEmpty(prUrl))
