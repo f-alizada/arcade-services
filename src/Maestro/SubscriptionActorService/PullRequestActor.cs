@@ -192,6 +192,7 @@ namespace SubscriptionActorService
         public const string PullRequestCheckKey = "pullRequestCheck";
         public const string PullRequestUpdateKey = "pullRequestUpdate";
         public const string PullRequestKey = "pullRequest";
+        public const string CodeFlowKey = "codeFlow";
 
         // PR description markers
         public const string DependencyUpdateBegin = "[DependencyUpdate]: <> (Begin)";
@@ -210,6 +211,7 @@ namespace SubscriptionActorService
         protected readonly ActorCollectionStateManager<UpdateAssetsParameters> _pullRequestUpdateState;
         protected readonly ActorStateManager<UpdateAssetsParameters> _pullRequestCheckState;
         protected readonly ActorStateManager<InProgressPullRequest> _pullRequestState;
+        protected readonly ActorStateManager<CodeFlowStatus> _codeFlowState;
 
         protected PullRequestActorImplementation(
             IReminderManager reminders,
@@ -237,6 +239,7 @@ namespace SubscriptionActorService
             _pullRequestUpdateState = new(stateManager, reminders, PullRequestUpdateKey);
             _pullRequestCheckState = new(stateManager, reminders, PullRequestCheckKey);
             _pullRequestState = new(stateManager, reminders, PullRequestKey);
+            _codeFlowState = new(stateManager, reminders, CodeFlowKey);
         }
 
         public async Task TrackSuccessfulAction(string action, string result)
