@@ -10,4 +10,7 @@ public class CodeFlowStatus
 {
     [DataMember]
     public string PrBranch { get; set; }
+
+    [DataMember]
+    public string SourceSha { get; set; }
 }

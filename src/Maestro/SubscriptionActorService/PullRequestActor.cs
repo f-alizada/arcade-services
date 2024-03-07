@@ -18,8 +18,8 @@ using Microsoft.DotNet.ServiceFabric.ServiceHost.Actors;
 using Microsoft.Extensions.Logging;
 using Microsoft.ServiceFabric.Actors;
 using Microsoft.ServiceFabric.Actors.Runtime;
-using Microsoft.ServiceFabric.Data;
 using ProductConstructionService.Client;
+using ProductConstructionService.Client.Models;
 using SubscriptionActorService.StateModel;
 
 using Asset = Maestro.Contracts.Asset;
@@ -204,6 +204,7 @@ namespace SubscriptionActorService
         private readonly BuildAssetRegistryContext _context;
         private readonly IRemoteFactory _remoteFactory;
         private readonly IBasicBarClient _barClient;
+        private readonly IProductConstructionServiceApi _pcsClient;
         private readonly IActionRunner _actionRunner;
         private readonly IActorProxyFactory<ISubscriptionActor> _subscriptionActorFactory;
         private readonly ICoherencyUpdateResolver _coherencyUpdateResolver;
@@ -231,6 +232,7 @@ namespace SubscriptionActorService
             _context = context;
             _remoteFactory = darcFactory;
             _barClient = barClient;
+            _pcsClient = pcsClient;
             _actionRunner = actionRunner;
             _subscriptionActorFactory = subscriptionActorFactory;
             _loggerFactory = loggerFactory;
@@ -364,68 +366,6 @@ namespace SubscriptionActorService
             await _pullRequestUpdateState.UnsetReminderAsync();
 
             return ActionResult.Create(true, "Pending updates applied. " + result);
-        }
-
-        /// <summary>
-        /// Alternative to ProcessPendingUpdatesAsync that is used in the code flow (VMR) scenario.
-        /// </summary>
-        private async Task<ActionResult<bool>> ProcessPendingCodeFlowUpdatesAsync(InProgressPullRequest? pr, bool canUpdate, List<UpdateAssetsParameters> updates)
-        {
-            // TODO https://github.com/dotnet/arcade-services/issues/3378: Support batched PRs for code flow updates
-            if (updates.Count > 1)
-            {
-                _logger.LogWarning("Code flow updates cannot be batched with other updates. Will process first update only.");
-            }
-
-            var update = updates.First();
-
-            string result;
-            if (pr == null)
-            {
-                var codeFlowUpdate = await _stateManager.TryGetCodeFlowStatus();
-
-                IRemote remote = await _remoteFactory.GetRemoteAsync(update.SourceRepo, _logger);
-                (string targetRepository, string targetBranch) = await GetTargetAsync();
-
-                // Check if the PR was created by PCS already
-                if (await remote.BranchExistsAsync(targetRepository, targetBranch))
-                {
-                    // Create regular dependency update PR
-                    string? prUrl = await CreatePullRequestAsync(updates);
-                    result = prUrl == null
-                        ? $"No changes required for {subscriptionIds}, no pull request created"
-                        : $"Pull Request '{prUrl}' for {subscriptionIds} created";
-
-                    _logger.LogInformation(result);
-
-                    await _stateManager.RemovePullRequestUpdatesAsync();
-                    await _reminders.RemovePullRequestUpdatesAsync();
-
-                    return ActionResult.Create(true, "Pending updates applied. " + result);
-                }
-
-
-                await _stateManager.RemovePullRequestUpdatesAsync();
-                await _reminders.RemovePullRequestUpdatesAsync();
-
-                return ActionResult.Create(true, "Pending updates applied. " + result);
-            }
-
-            if (!canUpdate)
-            {
-                _logger.LogInformation("PR {url} for {subscriptions} cannot be updated", pr.Url, subscriptionIds);
-                return ActionResult.Create(false, "PR cannot be updated.");
-            }
-
-            await UpdatePullRequestAsync(pr, updates);
-            result = $"Pull Request '{pr.Url}' updated.";
-            _logger.LogInformation("Pull Request {url} for {subscriptions} was updated", pr.Url, subscriptionIds);
-
-            await _stateManager.RemovePullRequestUpdatesAsync();
-            await _reminders.RemovePullRequestUpdatesAsync();
-
-            return ActionResult.Create(true, "Pending updates applied. " + result);
-
         }
 
         protected virtual Task TagSourceRepositoryGitHubContactsIfPossibleAsync(InProgressPullRequest pr)
@@ -838,7 +778,7 @@ namespace SubscriptionActorService
                 return null;
             }
 
-            string newBranchName = $"darc-{targetBranch}-{Guid.NewGuid()}";
+            string newBranchName = GetNewBranchName(targetBranch);
             await darcRemote.CreateNewBranchAsync(targetRepository, targetBranch, newBranchName);
 
             try
@@ -1166,11 +1106,10 @@ namespace SubscriptionActorService
             return mergedUpdates;
         }
 
-        #nullable disable
         private class TargetRepoDependencyUpdate
         {
             public bool CoherencyCheckSuccessful { get; set; } = true;
-            public List<CoherencyErrorDetails> CoherencyErrors { get; set; }
+            public List<CoherencyErrorDetails> CoherencyErrors { get; set; } = [];
             public List<(UpdateAssetsParameters update, List<DependencyUpdate> deps)> RequiredUpdates { get; set; } = [];
         }
 
@@ -1280,7 +1219,7 @@ namespace SubscriptionActorService
         private async Task<RepositoryBranchUpdate> GetRepositoryBranchUpdate()
         {
             (string repo, string branch) = await GetTargetAsync();
-            RepositoryBranchUpdate update = await _context.RepositoryBranchUpdates.FindAsync(repo, branch);
+            RepositoryBranchUpdate? update = await _context.RepositoryBranchUpdates.FindAsync(repo, branch);
             if (update == null)
             {
                 RepositoryBranch repoBranch = await GetRepositoryBranch(repo, branch);
@@ -1297,7 +1236,7 @@ namespace SubscriptionActorService
 
         private async Task<RepositoryBranch> GetRepositoryBranch(string repo, string branch)
         {
-            RepositoryBranch repoBranch = await _context.RepositoryBranches.FindAsync(repo, branch);
+            RepositoryBranch? repoBranch = await _context.RepositoryBranches.FindAsync(repo, branch);
             if (repoBranch == null)
             {
                 _context.RepositoryBranches.Add(
@@ -1314,5 +1253,115 @@ namespace SubscriptionActorService
 
             return repoBranch;
         }
+
+        private static string GetNewBranchName(string targetBranch) => $"darc-{targetBranch}-{Guid.NewGuid()}";
+
+        #region Code flow subscriptions
+
+        /// <summary>
+        /// Alternative to ProcessPendingUpdatesAsync that is used in the code flow (VMR) scenario.
+        /// </summary>
+        private async Task<ActionResult<bool>> ProcessPendingCodeFlowUpdatesAsync(
+            InProgressPullRequest? pr,
+            bool canUpdate,
+            List<UpdateAssetsParameters> updates)
+        {
+            // TODO https://github.com/dotnet/arcade-services/issues/3378: Support batched PRs for code flow updates
+            if (updates.Count > 1)
+            {
+                _logger.LogWarning("Code flow updates cannot be batched with other updates. Will process first update only.");
+            }
+
+            var update = updates.First();
+
+            // The E2E order of things for is:
+            // 1. We send a request to PCS and wait for a branch to be created. We note down this in the codeflow status. We set a reminder.
+            // 2. When reminder kicks in, we check if the branch is created. If not, we repeat the reminder.
+            // 3. When branch is created, we create the PR and set the usual reminder of watching a PR (common with the regular subscriptions).
+            // 4. For new updates, we only delegate those to PCS which will push in the branch.
+            if (pr == null)
+            {
+                CodeFlowStatus? codeFlowUpdate = await _codeFlowState.TryGetStateAsync();
+                (string targetRepository, string targetBranch) = await GetTargetAsync();
+
+                // Step 1.
+                if (codeFlowUpdate == null)
+                {
+                    return await RequestCodeFlowBranchAsync(update, targetBranch);
+                }
+
+                // Step 2.
+                IRemote remote = await _remoteFactory.GetRemoteAsync(targetRepository, _logger);
+                if (!await remote.BranchExistsAsync(targetRepository, codeFlowUpdate.PrBranch))
+                {
+                    _logger.LogInformation("Branch {branch} for subscription {subscriptionId} not created yet. Will check again later.",
+                        codeFlowUpdate.PrBranch,
+                        update.SubscriptionId);
+
+                    return ActionResult.Create(true, $"Pending updates applied. Branch {codeFlowUpdate.PrBranch} not created yet.");
+                }
+
+                // Step 3.
+                string? prUrl = await CreateCodeFlowPullRequestAsync(update, targetRepository, targetBranch, codeFlowUpdate.PrBranch);
+
+                await _pullRequestUpdateState.RemoveStateAsync();
+                await _pullRequestUpdateState.UnsetReminderAsync();
+
+                return ActionResult.Create(true, $"Pending updates applied. PR {prUrl} created.");
+            }
+
+            if (!canUpdate)
+            {
+                _logger.LogInformation("PR {url} for {subscription} cannot be updated at the moment", pr.Url, update.SubscriptionId);
+                return ActionResult.Create(false, "PR cannot be updated.");
+            }
+
+            // Step 4.
+            // TODO Compare last SHA with the build SHA to see if we need to delegate this update to PCS.
+        }
+
+        private async Task<ActionResult<bool>> RequestCodeFlowBranchAsync(UpdateAssetsParameters update, string targetBranch)
+        {
+            CodeFlowStatus codeFlowUpdate = new()
+            {
+                PrBranch = GetNewBranchName(targetBranch),
+                SourceSha = update.SourceSha,
+            };
+
+            _logger.LogInformation(
+                "New code flow request for subscription {subscriptionId}. Requesting branch {branch} from PCS",
+                update.SubscriptionId,
+                codeFlowUpdate.PrBranch);
+
+            try
+            {
+                await _pcsClient.CodeFlow.FlowAsync(new CreateBranchRequest
+                {
+                    BuildId = update.BuildId,
+                    SubscriptionId = update.SubscriptionId,
+                    PrBranch = codeFlowUpdate.PrBranch,
+                });
+            }
+            catch (Exception e)
+            {
+                // TODO - Handle this
+                _logger.LogError(e, $"Failed to request new branch {codeFlowUpdate.PrBranch} for subscription {update.SubscriptionId}");
+            }
+
+            await _codeFlowState.StoreStateAsync(codeFlowUpdate);
+            await _pullRequestUpdateState.SetReminderAsync();
+
+            return ActionResult.Create(true, $"Pending updates applied. Branch {codeFlowUpdate.PrBranch} requested from PCS.");
+        }
+
+        private async Task<string?> CreateCodeFlowPullRequestAsync(
+            UpdateAssetsParameters update,
+            string targetRepository,
+            string prBranch,
+            string targetBranch)
+        {
+        }
+
+        #endregion
     }
 }
