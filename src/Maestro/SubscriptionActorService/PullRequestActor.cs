@@ -1096,7 +1096,12 @@ namespace SubscriptionActorService
                 }
 
                 // Step 3. Create a PR
-                string? prUrl = await CreateCodeFlowPullRequestAsync(update, targetRepository, targetBranch, codeFlowUpdate.PrBranch);
+                string prUrl = await CreateCodeFlowPullRequestAsync(
+                    update,
+                    codeFlowUpdate,
+                    targetRepository,
+                    targetBranch,
+                    codeFlowUpdate.PrBranch);
 
                 await _pullRequestUpdateState.RemoveStateAsync();
                 await _pullRequestUpdateState.UnsetReminderAsync();
@@ -1189,13 +1194,61 @@ namespace SubscriptionActorService
             return ActionResult.Create(true, $"Pending updates applied. Branch {codeFlowUpdate.PrBranch} requested from PCS.");
         }
 
-        private async Task<string?> CreateCodeFlowPullRequestAsync(
+        private async Task<string> CreateCodeFlowPullRequestAsync(
             UpdateAssetsParameters update,
+            CodeFlowStatus codeFlowUpdate,
             string targetRepository,
             string prBranch,
             string targetBranch)
         {
-            // TODO: We must set the PR check state in here as it's done in CreatePullRequestAsync too
+            IRemote darcRemote = await _remoteFactory.GetRemoteAsync(targetRepository, _logger);
+
+            try
+            {
+                string title = await _pullRequestBuilder.GenerateCodeFlowPullRequestTitleAsync(update, targetBranch);
+                string description = await _pullRequestBuilder.GenerateCodeFlowPullRequestDescriptionAsync(update, targetBranch);
+
+                string prUrl = await darcRemote.CreatePullRequestAsync(
+                    targetRepository,
+                    new PullRequest
+                    {
+                        Title = title,
+                        Description = description,
+                        BaseBranch = targetBranch,
+                        HeadBranch = prBranch,
+                    });
+
+                InProgressPullRequest inProgressPr = new()
+                {
+                    Url = prUrl,
+                    ContainedSubscriptions =
+                    [
+                        new()
+                        {
+                            SubscriptionId = update.SubscriptionId,
+                            BuildId = update.BuildId
+                        }
+                    ],
+                    CoherencyCheckSuccessful = true,
+                };
+
+                await AddDependencyFlowEventsAsync(
+                    inProgressPr.ContainedSubscriptions,
+                    DependencyFlowEventType.Created,
+                    DependencyFlowEventReason.New,
+                    MergePolicyCheckResult.PendingPolicies,
+                    prUrl);
+
+                await _pullRequestState.StoreStateAsync(inProgressPr);
+                await _pullRequestCheckState.SetReminderAsync();
+
+                return prUrl;
+            }
+            catch
+            {
+                await darcRemote.DeleteBranchAsync(targetRepository, prBranch);
+                throw;
+            }
         }
 
         #endregion

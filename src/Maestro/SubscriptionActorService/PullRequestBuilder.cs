@@ -43,6 +43,20 @@ internal interface IPullRequestBuilder
     Task<string> GeneratePullRequestTitleAsync(
         InProgressPullRequest inProgressPr,
         string targetBranch);
+
+    /// <summary>
+    ///    Generate the title for a code flow PR.
+    /// </summary>
+    Task<string> GenerateCodeFlowPullRequestTitleAsync(
+        UpdateAssetsParameters update,
+        string targetBranch);
+
+    /// <summary>
+    ///    Generate the description for a code flow PR.
+    /// </summary>
+    Task<string> GenerateCodeFlowPullRequestDescriptionAsync(
+        UpdateAssetsParameters update,
+        string targetBranch);
 }
 
 internal class PullRequestBuilder : IPullRequestBuilder
@@ -70,6 +84,20 @@ internal class PullRequestBuilder : IPullRequestBuilder
         _remoteFactory = remoteFactory;
         _barClient = barClient;
         _logger = logger;
+    }
+
+    public Task<string> GenerateCodeFlowPullRequestTitleAsync(
+        UpdateAssetsParameters update,
+        string targetBranch)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task<string> GenerateCodeFlowPullRequestDescriptionAsync(
+        UpdateAssetsParameters update,
+        string targetBranch)
+    {
+        throw new NotImplementedException();
     }
 
     public async Task<string> GeneratePullRequestTitleAsync(InProgressPullRequest inProgressPr, string targetBranch)
