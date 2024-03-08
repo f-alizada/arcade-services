@@ -22,6 +22,7 @@ using Microsoft.ServiceFabric.Actors;
 using Microsoft.VisualStudio.Services.Common;
 using Moq;
 using NUnit.Framework;
+using ProductConstructionService.Client;
 using SubscriptionActorService.StateModel;
 using Asset = Maestro.Contracts.Asset;
 using AssetData = Microsoft.DotNet.Maestro.Client.Models.AssetData;
@@ -79,6 +80,7 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
         services.AddSingleton<IGitHubClientFactory, GitHubClientFactory>();
         services.AddScoped<IBasicBarClient, SqlBarClient>();
         services.AddTransient<IPullRequestBuilder, PullRequestBuilder>();
+        services.AddSingleton(Mock.Of<IProductConstructionServiceApi>());
         services.AddSingleton(_updateResolver.Object);
 
         _remoteFactory.Setup(f => f.GetRemoteAsync(It.IsAny<string>(), It.IsAny<ILogger>()))

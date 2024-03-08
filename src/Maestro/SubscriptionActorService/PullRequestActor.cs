@@ -903,7 +903,7 @@ namespace SubscriptionActorService
         private class TargetRepoDependencyUpdate
         {
             public bool CoherencyCheckSuccessful { get; set; } = true;
-            public List<CoherencyErrorDetails> CoherencyErrors { get; set; } = [];
+            public List<CoherencyErrorDetails>? CoherencyErrors { get; set; }
             public List<(UpdateAssetsParameters update, List<DependencyUpdate> deps)> RequiredUpdates { get; set; } = [];
         }
 
