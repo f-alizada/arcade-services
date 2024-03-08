@@ -1149,7 +1149,7 @@ namespace SubscriptionActorService
             }
             catch (Exception e)
             {
-                // TODO - Handle this
+                // TODO https://github.com/dotnet/arcade-services/issues/3318: Handle this
                 _logger.LogError(e, "Failed to request branch update for PR {url} for subscription {subscriptionId}",
                     pr.Url,
                     update.SubscriptionId);
@@ -1182,7 +1182,7 @@ namespace SubscriptionActorService
             }
             catch (Exception e)
             {
-                // TODO - Handle this
+                // TODO https://github.com/dotnet/arcade-services/issues/3318: Handle this
                 _logger.LogError(e, "Failed to request new branch {branch} for subscription {subscriptionId}",
                     codeFlowUpdate.PrBranch,
                     update.SubscriptionId);
