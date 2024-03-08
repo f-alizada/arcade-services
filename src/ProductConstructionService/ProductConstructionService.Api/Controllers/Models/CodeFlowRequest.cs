@@ -3,7 +3,7 @@
 
 namespace ProductConstructionService.Api.Controllers.Models;
 
-public class CreateBranchRequest
+public class CodeFlowRequest
 {
     /// <summary>
     /// Subscription that is being flown/triggered.
@@ -19,4 +19,9 @@ public class CreateBranchRequest
     /// Name of the PR branch that will be created in the target repo.
     /// </summary>
     public required string PrBranch { get; init; }
+
+    /// <summary>
+    /// URL to the PR that was created.
+    /// </summary>
+    public string? PrUrl { get; init; }
 }
