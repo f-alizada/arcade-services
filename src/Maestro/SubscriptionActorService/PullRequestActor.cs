@@ -454,6 +454,7 @@ namespace SubscriptionActorService
                                 checkPolicyResult.Result,
                                 prUrl);
                             await _pullRequestState.RemoveStateAsync();
+                            await _codeFlowState.RemoveStateAsync();
                             return ActionResult.Create(SynchronizePullRequestResult.Completed, checkPolicyResult.Message);
                         case MergePolicyCheckResult.FailedPolicies:
                             await TagSourceRepositoryGitHubContactsIfPossibleAsync(pr);
@@ -485,6 +486,7 @@ namespace SubscriptionActorService
                         pr.MergePolicyResult,
                         prUrl);
                     await _pullRequestState.RemoveStateAsync();
+                    await _codeFlowState.RemoveStateAsync();
 
                     // Also try to clean up the PR branch.
                     try
@@ -497,7 +499,7 @@ namespace SubscriptionActorService
                         _logger.LogInformation(e, "Failed to delete branch associated with Pull Request {url}", prUrl);
                     }
 
-                    return ActionResult.Create(SynchronizePullRequestResult.Completed, $"PR Has been manually {status}");
+                    return ActionResult.Create(SynchronizePullRequestResult.Completed, $"PR has been manually {status}");
                 default:
                     throw new NotImplementedException($"Unknown PR status '{status}'");
             }
@@ -582,6 +584,7 @@ namespace SubscriptionActorService
                     await _pullRequestCheckState.UnsetReminderAsync();
                     await _pullRequestUpdateState.UnsetReminderAsync();
                     await _pullRequestState.RemoveStateAsync();
+                    await _codeFlowState.RemoveStateAsync();
                 }
             }
         }
@@ -707,8 +710,6 @@ namespace SubscriptionActorService
 
                 var inProgressPr = new InProgressPullRequest
                 {
-                    PrBranch = newBranchName,
-
                     // Calculate the subscriptions contained within the
                     // update. Coherency updates do not have subscription info.
                     ContainedSubscriptions = repoDependencyUpdate.RequiredUpdates
@@ -1066,6 +1067,7 @@ namespace SubscriptionActorService
             }
 
             var update = updates.First();
+            CodeFlowStatus? codeFlowUpdate = await _codeFlowState.TryGetStateAsync();
 
             // The E2E order of things for is:
             // 1. We send a request to PCS and wait for a branch to be created. We note down this in the codeflow status. We set a reminder.
@@ -1074,43 +1076,81 @@ namespace SubscriptionActorService
             // 4. For new updates, we only delegate those to PCS which will push in the branch.
             if (pr == null)
             {
-                CodeFlowStatus? codeFlowUpdate = await _codeFlowState.TryGetStateAsync();
                 (string targetRepository, string targetBranch) = await GetTargetAsync();
 
-                // Step 1.
+                // Step 1. Let PCS create a branch for us
                 if (codeFlowUpdate == null)
                 {
                     return await RequestCodeFlowBranchAsync(update, targetBranch);
                 }
 
-                // Step 2.
+                // Step 2. Wait for the branch to be created
                 IRemote remote = await _remoteFactory.GetRemoteAsync(targetRepository, _logger);
                 if (!await remote.BranchExistsAsync(targetRepository, codeFlowUpdate.PrBranch))
                 {
-                    _logger.LogInformation("Branch {branch} for subscription {subscriptionId} not created yet. Will check again later.",
+                    _logger.LogInformation("Branch {branch} for subscription {subscriptionId} not created yet. Will check again later",
                         codeFlowUpdate.PrBranch,
                         update.SubscriptionId);
 
-                    return ActionResult.Create(true, $"Pending updates applied. Branch {codeFlowUpdate.PrBranch} not created yet.");
+                    return ActionResult.Create(true, $"Pending updates applied. Branch {codeFlowUpdate.PrBranch} not created yet");
                 }
 
-                // Step 3.
+                // Step 3. Create a PR
                 string? prUrl = await CreateCodeFlowPullRequestAsync(update, targetRepository, targetBranch, codeFlowUpdate.PrBranch);
 
                 await _pullRequestUpdateState.RemoveStateAsync();
                 await _pullRequestUpdateState.UnsetReminderAsync();
 
-                return ActionResult.Create(true, $"Pending updates applied. PR {prUrl} created.");
+                return ActionResult.Create(true, $"Pending updates applied. PR {prUrl} created");
             }
 
+            // Technically, this should never happen as we create the code flow data before we even create the PR
+            if (codeFlowUpdate == null)
+            {
+                _logger.LogError("Missing code flow data for subscription {subscription}", update.SubscriptionId);
+                await _pullRequestUpdateState.RemoveStateAsync();
+                await _pullRequestUpdateState.UnsetReminderAsync();
+                return ActionResult.Create(false, "Missing code flow data.");
+            }
+
+            // Policy checks / builds still running?
             if (!canUpdate)
             {
                 _logger.LogInformation("PR {url} for {subscription} cannot be updated at the moment", pr.Url, update.SubscriptionId);
-                return ActionResult.Create(false, "PR cannot be updated.");
+                return ActionResult.Create(false, "PR cannot be updated");
             }
 
-            // Step 4.
-            // TODO Compare last SHA with the build SHA to see if we need to delegate this update to PCS.
+            // Step 4. Update the PR (if needed)
+
+            // Compare last SHA with the build SHA to see if we need to delegate this update to PCS
+            if (update.SourceSha == codeFlowUpdate.SourceSha)
+            {
+                _logger.LogInformation("PR {url} for {subscription} is up to date ({sha})",
+                    pr.Url,
+                    update.SubscriptionId,
+                    update.SourceSha);
+                return ActionResult.Create(false, "PR cannot be updated");
+            }
+
+            try
+            {
+                await _pcsClient.CodeFlow.FlowAsync(new CodeFlowRequest
+                {
+                    BuildId = update.BuildId,
+                    SubscriptionId = update.SubscriptionId,
+                    PrBranch = codeFlowUpdate.PrBranch,
+                    PrUrl = pr.Url,
+                });
+            }
+            catch (Exception e)
+            {
+                // TODO - Handle this
+                _logger.LogError(e, "Failed to request branch update for PR {url} for subscription {subscriptionId}",
+                    pr.Url,
+                    update.SubscriptionId);
+            }
+
+            return ActionResult.Create(true, "New changes requested from PCS");
         }
 
         private async Task<ActionResult<bool>> RequestCodeFlowBranchAsync(UpdateAssetsParameters update, string targetBranch)
@@ -1128,7 +1168,7 @@ namespace SubscriptionActorService
 
             try
             {
-                await _pcsClient.CodeFlow.FlowAsync(new CreateBranchRequest
+                await _pcsClient.CodeFlow.FlowAsync(new CodeFlowRequest
                 {
                     BuildId = update.BuildId,
                     SubscriptionId = update.SubscriptionId,
@@ -1138,7 +1178,9 @@ namespace SubscriptionActorService
             catch (Exception e)
             {
                 // TODO - Handle this
-                _logger.LogError(e, $"Failed to request new branch {codeFlowUpdate.PrBranch} for subscription {update.SubscriptionId}");
+                _logger.LogError(e, "Failed to request new branch {branch} for subscription {subscriptionId}",
+                    codeFlowUpdate.PrBranch,
+                    update.SubscriptionId);
             }
 
             await _codeFlowState.StoreStateAsync(codeFlowUpdate);
@@ -1153,6 +1195,7 @@ namespace SubscriptionActorService
             string prBranch,
             string targetBranch)
         {
+            // TODO: We must set the PR check state in here as it's done in CreatePullRequestAsync too
         }
 
         #endregion
