@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Security.Policy;
 using System.Threading.Tasks;
 using Maestro.Contracts;
 using Maestro.Data;
@@ -170,17 +171,19 @@ namespace SubscriptionActorService
 
         public async Task ReceiveReminderAsync(string reminderName, byte[] state, TimeSpan dueTime, TimeSpan period)
         {
-            if (reminderName == PullRequestActorImplementation.PullRequestCheckKey)
+            switch (reminderName)
             {
-                await Implementation!.SynchronizeInProgressPullRequestAsync();
-            }
-            else if (reminderName == PullRequestActorImplementation.PullRequestUpdateKey)
-            {
-                await Implementation!.RunProcessPendingUpdatesAsync();
-            }
-            else
-            {
-                throw new ReminderNotFoundException(reminderName);
+                case PullRequestActorImplementation.PullRequestCheckKey:
+                    await Implementation!.SynchronizeInProgressPullRequestAsync();
+                    break;
+                case PullRequestActorImplementation.PullRequestUpdateKey:
+                    await Implementation!.RunProcessPendingUpdatesAsync();
+                    break;
+                case PullRequestActorImplementation.CodeFlowKey:
+                    await Implementation!.RunProcessCodeFlowReminderAsync();
+                    break;
+                default:
+                    throw new ReminderNotFoundException(reminderName);
             }
         }
     }
@@ -280,6 +283,11 @@ namespace SubscriptionActorService
             return _actionRunner.ExecuteAction(() => ProcessPendingUpdatesAsync());
         }
 
+        public Task RunProcessCodeFlowReminderAsync()
+        {
+            return _actionRunner.ExecuteAction(() => ProcessCodeFlowReminderAsync());
+        }
+
         /// <summary>
         ///     Process any pending pull request updates stored in the <see cref="PullRequestUpdate" />
         ///     actor state key.
@@ -305,7 +313,8 @@ namespace SubscriptionActorService
             // Code flow updates are handled separetely
             if (updates.Any(u => u.IsCodeFlow))
             {
-                return await ProcessPendingCodeFlowUpdatesAsync(pr, canUpdate, updates);
+                CodeFlowStatus? codeFlowStatus = await _codeFlowState.TryGetStateAsync();
+                return await ProcessCodeFlowUpdatesAsync(pr, codeFlowStatus, canUpdate, updates);
             }
 
             var subscriptionIds = updates.Count > 1
@@ -644,6 +653,12 @@ namespace SubscriptionActorService
                 IsCoherencyUpdate = false,
                 IsCodeFlow = isCodeFlow,
             };
+
+            if (isCodeFlow)
+            {
+                var result = await ProcessCodeFlowUpdatesAsync(pr, null, canUpdate, [updateParameter]);
+                return ActionResult.Create(result.Message);
+            }
 
             try
             {
@@ -1053,10 +1068,34 @@ namespace SubscriptionActorService
         #region Code flow subscriptions
 
         /// <summary>
+        ///     Process reminder associated with code flows.
+        /// </summary>
+        /// <returns>
+        ///     An <see cref="ActionResult{bool}" /> containing:
+        ///     <see langword="true" /> if updates have been applied; <see langword="false" /> otherwise.
+        /// </returns>
+        [ActionMethod("Processing pending updates")]
+        public async Task<ActionResult<bool>> ProcessCodeFlowReminderAsync()
+        {
+            CodeFlowStatus? status = await _codeFlowState.TryGetStateAsync();
+            List<UpdateAssetsParameters>? updates = await _pullRequestUpdateState.TryGetStateAsync();
+            InProgressPullRequest? pr = await _pullRequestState.TryGetStateAsync();
+
+            if (status == null || updates == null)
+            {
+                await _codeFlowState.UnsetReminderAsync();
+                return ActionResult.Create(false, "Missing code flow data");
+            }
+
+            return await ProcessCodeFlowUpdatesAsync(pr, status, true, updates);
+        }
+
+        /// <summary>
         /// Alternative to ProcessPendingUpdatesAsync that is used in the code flow (VMR) scenario.
         /// </summary>
-        private async Task<ActionResult<bool>> ProcessPendingCodeFlowUpdatesAsync(
+        private async Task<ActionResult<bool>> ProcessCodeFlowUpdatesAsync(
             InProgressPullRequest? pr,
+            CodeFlowStatus? codeFlowUpdate,
             bool canUpdate,
             List<UpdateAssetsParameters> updates)
         {
@@ -1067,7 +1106,6 @@ namespace SubscriptionActorService
             }
 
             var update = updates.First();
-            CodeFlowStatus? codeFlowUpdate = await _codeFlowState.TryGetStateAsync();
 
             // The E2E order of things for is:
             // 1. We send a request to PCS and wait for a branch to be created. We note down this in the codeflow status. We set a reminder.
@@ -1189,7 +1227,8 @@ namespace SubscriptionActorService
             }
 
             await _codeFlowState.StoreStateAsync(codeFlowUpdate);
-            await _pullRequestUpdateState.SetReminderAsync();
+            await _codeFlowState.SetReminderAsync(dueTimeInMinutes: 3);
+            await _pullRequestUpdateState.StoreItemStateAsync(update);
 
             return ActionResult.Create(true, $"Pending updates applied. Branch {codeFlowUpdate.PrBranch} requested from PCS.");
         }

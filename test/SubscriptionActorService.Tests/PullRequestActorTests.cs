@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
 using Maestro.Contracts;
@@ -23,6 +24,7 @@ using Microsoft.VisualStudio.Services.Common;
 using Moq;
 using NUnit.Framework;
 using ProductConstructionService.Client;
+using ProductConstructionService.Client.Models;
 using SubscriptionActorService.StateModel;
 using Asset = Maestro.Contracts.Asset;
 using AssetData = Microsoft.DotNet.Maestro.Client.Models.AssetData;
@@ -43,6 +45,8 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
     private Mock<IRemoteFactory> _remoteFactory = null!;
     private Mock<ICoherencyUpdateResolver> _updateResolver = null!;
     private Mock<IMergePolicyEvaluator> _mergePolicyEvaluator = null!;
+    private Mock<IProductConstructionServiceApi> _pcsClient = null!;
+    private Mock<ICodeFlow> _pcsClientCodeFlow = null!;
 
     private string _newBranch = null!;
 
@@ -57,6 +61,8 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
         _mergePolicyEvaluator = CreateMock<IMergePolicyEvaluator>();
         _remoteFactory = new Mock<IRemoteFactory>(MockBehavior.Strict);
         _updateResolver = new Mock<ICoherencyUpdateResolver>(MockBehavior.Strict);
+        _pcsClient = new();
+        _pcsClientCodeFlow = new();
     }
 
     protected override void RegisterServices(IServiceCollection services)
@@ -71,6 +77,9 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
                 return mock.Object;
             });
 
+        _pcsClient.SetReturnsDefault(_pcsClientCodeFlow.Object);
+        _pcsClientCodeFlow.SetReturnsDefault(Task.CompletedTask);
+
         services.AddSingleton(proxyFactory.Object);
         services.AddSingleton(_mergePolicyEvaluator.Object);
         services.AddGitHubTokenProvider();
@@ -80,7 +89,7 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
         services.AddSingleton<IGitHubClientFactory, GitHubClientFactory>();
         services.AddScoped<IBasicBarClient, SqlBarClient>();
         services.AddTransient<IPullRequestBuilder, PullRequestBuilder>();
-        services.AddSingleton(Mock.Of<IProductConstructionServiceApi>());
+        services.AddSingleton(_pcsClient.Object);
         services.AddSingleton(_updateResolver.Object);
 
         _remoteFactory.Setup(f => f.GetRemoteAsync(It.IsAny<string>(), It.IsAny<ILogger>()))
@@ -181,6 +190,28 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
                 options => options.Excluding(pr => pr.Title).Excluding(pr => pr.Description));
 
         ValidatePRDescriptionContainsLinks(pullRequests[0]);
+    }
+
+    private string AndPcsShouldHaveBeenCalled(Build build)
+    {
+        var pcsRequests = new List<CodeFlowRequest>();
+        _pcsClientCodeFlow
+            .Verify(r => r.FlowAsync(Capture.In(pcsRequests), It.IsAny<CancellationToken>()));
+
+        pcsRequests.Should()
+            .BeEquivalentTo(
+                new List<CodeFlowRequest>
+                {
+                    new()
+                    {
+                        SubscriptionId = Subscription.Id,
+                        BuildId = build.Id,
+                        PrUrl = null,
+                    }
+                },
+                options => options.Excluding(r => r.PrBranch));
+
+        return pcsRequests[0].PrBranch;
     }
 
     private static void ValidatePRDescriptionContainsLinks(PullRequest pr)
@@ -292,7 +323,6 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
                 });
     }
 
-
     private IDisposable WithExistingPullRequest(SynchronizePullRequestResult checkResult)
     {
         AfterDbUpdateActions.Add(() =>
@@ -355,6 +385,45 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
             });
     }
 
+    private IDisposable WithExistingCodeFlowStatus(Build build)
+    {
+        AfterDbUpdateActions.Add(() =>
+        {
+            var status = new CodeFlowStatus
+            {
+                PrBranch = InProgressPrHeadBranch,
+                SourceSha = build.Commit,
+            };
+            StateManager.SetStateAsync(PullRequestActorImplementation.CodeFlowKey, status);
+            ExpectedActorState.Add(PullRequestActorImplementation.CodeFlowKey, status);
+        });
+
+        ActionRunner.Setup(r => r.ExecuteAction(It.IsAny<Expression<Func<Task<ActionResult<SynchronizePullRequestResult>>>>>()))
+            .ReturnsAsync(checkResult);
+
+        if (checkResult == SynchronizePullRequestResult.InProgressCanUpdate)
+        {
+            _darcRemotes.GetOrAddValue(TargetRepo, CreateMock<IRemote>)
+                .Setup(r => r.GetPullRequestAsync(InProgressPrUrl))
+                .ReturnsAsync(
+                    new PullRequest
+                    {
+                        HeadBranch = InProgressPrHeadBranch,
+                        BaseBranch = TargetBranch
+                    });
+        }
+
+        return Disposable.Create(
+            () =>
+            {
+                ActionRunner.Verify(r => r.ExecuteAction(It.IsAny<Expression<Func<Task<ActionResult<SynchronizePullRequestResult>>>>>()));
+                if (checkResult == SynchronizePullRequestResult.InProgressCanUpdate)
+                {
+                    _darcRemotes[TargetRepo].Verify(r => r.GetPullRequestAsync(InProgressPrUrl));
+                }
+            });
+    }
+
     private void AndShouldHavePullRequestCheckReminder()
     {
         ExpectedReminders.Add(
@@ -375,6 +444,17 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
                 [],
                 TimeSpan.FromMinutes(5),
                 TimeSpan.FromMinutes(5)));
+    }
+
+    private void ThenShouldHaveCodeFlowReminder()
+    {
+        ExpectedReminders.Add(
+            PullRequestActorImplementation.CodeFlowKey,
+            new MockReminderManager.Reminder(
+                PullRequestActorImplementation.CodeFlowKey,
+                null,
+                TimeSpan.FromMinutes(3),
+                TimeSpan.FromMinutes(3)));
     }
 
     private void AndShouldHaveInProgressPullRequestState(Build forBuild, bool coherencyCheckSuccessful = true, List<CoherencyErrorDetails>? coherencyErrors = null)
@@ -405,7 +485,18 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
             });
     }
 
-    private void AndShouldHavePendingUpdateState(Build forBuild)
+    private void AndShouldHaveCodeFlowState(Build forBuild, string? prBranch = null)
+    {
+        ExpectedActorState.Add(
+            PullRequestActorImplementation.CodeFlowKey,
+            new CodeFlowStatus
+            {
+                SourceSha = forBuild.Commit,
+                PrBranch = prBranch,
+            });
+    }
+
+    private void AndShouldHavePendingUpdateState(Build forBuild, bool isCodeFlow = false)
     {
         ExpectedActorState.Add(
             PullRequestActorImplementation.PullRequestUpdateKey,
@@ -424,7 +515,8 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
                             Version = a.Version
                         })
                         .ToList(),
-                    IsCoherencyUpdate = false
+                    IsCoherencyUpdate = false,
+                    IsCodeFlow = isCodeFlow,
                 }
             });
     }
@@ -740,6 +832,46 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
                     }
                 ]);
             AndDependencyFlowEventsShouldBeAdded();
+        }
+
+        [Test]
+        public async Task UpdateWithCodeFlowNoExistingStateOrPrBranch()
+        {
+            GivenATestChannel();
+            GivenACodeFlowSubscription(
+                new SubscriptionPolicy
+                {
+                    Batchable = false,
+                    UpdateFrequency = UpdateFrequency.EveryBuild,
+                });
+            Build build = GivenANewBuild(true);
+
+            await WhenUpdateAssetsAsyncIsCalled(build);
+
+            ThenShouldHaveCodeFlowReminder();
+            var requestedBranch = AndPcsShouldHaveBeenCalled(build);
+            AndShouldHaveCodeFlowState(build, requestedBranch);
+            AndShouldHavePendingUpdateState(build, isCodeFlow: true);
+        }
+
+        [Test]
+        public async Task UpdateWithCodeFlowWithInitialUpdateAndNoExistingPrBranch()
+        {
+            GivenATestChannel();
+            GivenACodeFlowSubscription(
+                new SubscriptionPolicy
+                {
+                    Batchable = false,
+                    UpdateFrequency = UpdateFrequency.EveryBuild,
+                });
+            Build build = GivenANewBuild(true);
+
+            await WhenUpdateAssetsAsyncIsCalled(build);
+
+            ThenShouldHaveCodeFlowReminder();
+            var requestedBranch = AndPcsShouldHaveBeenCalled(build);
+            AndShouldHaveCodeFlowState(build, requestedBranch);
+            AndShouldHavePendingUpdateState(build, isCodeFlow: true);
         }
     }
 }
