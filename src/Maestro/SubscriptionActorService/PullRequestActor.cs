@@ -313,8 +313,7 @@ namespace SubscriptionActorService
             // Code flow updates are handled separetely
             if (updates.Any(u => u.IsCodeFlow))
             {
-                CodeFlowStatus? codeFlowStatus = await _codeFlowState.TryGetStateAsync();
-                return await ProcessCodeFlowUpdatesAsync(pr, codeFlowStatus, canUpdate, updates);
+                return await ProcessCodeFlowUpdatesAsync(updates, pr, canUpdate);
             }
 
             var subscriptionIds = updates.Count > 1
@@ -656,7 +655,7 @@ namespace SubscriptionActorService
 
             if (isCodeFlow)
             {
-                var result = await ProcessCodeFlowUpdatesAsync(pr, null, canUpdate, [updateParameter]);
+                var result = await ProcessCodeFlowUpdatesAsync([updateParameter], pr, canUpdate);
                 return ActionResult.Create(result.Message);
             }
 
@@ -1077,9 +1076,8 @@ namespace SubscriptionActorService
         [ActionMethod("Processing pending updates")]
         public async Task<ActionResult<bool>> ProcessCodeFlowReminderAsync()
         {
-            CodeFlowStatus? status = await _codeFlowState.TryGetStateAsync();
             List<UpdateAssetsParameters>? updates = await _pullRequestUpdateState.TryGetStateAsync();
-            InProgressPullRequest? pr = await _pullRequestState.TryGetStateAsync();
+            CodeFlowStatus? status = await _codeFlowState.TryGetStateAsync();
 
             if (status == null || updates == null)
             {
@@ -1087,17 +1085,18 @@ namespace SubscriptionActorService
                 return ActionResult.Create(false, "Missing code flow data");
             }
 
-            return await ProcessCodeFlowUpdatesAsync(pr, status, true, updates);
+            InProgressPullRequest? pr = await _pullRequestState.TryGetStateAsync();
+            return await ProcessCodeFlowUpdatesAsync(updates, pr, true, status);
         }
 
         /// <summary>
         /// Alternative to ProcessPendingUpdatesAsync that is used in the code flow (VMR) scenario.
         /// </summary>
         private async Task<ActionResult<bool>> ProcessCodeFlowUpdatesAsync(
+            List<UpdateAssetsParameters> updates,
             InProgressPullRequest? pr,
-            CodeFlowStatus? codeFlowUpdate,
             bool canUpdate,
-            List<UpdateAssetsParameters> updates)
+            CodeFlowStatus? codeFlowStatus = null)
         {
             // TODO https://github.com/dotnet/arcade-services/issues/3378: Support batched PRs for code flow updates
             if (updates.Count > 1)
@@ -1106,6 +1105,8 @@ namespace SubscriptionActorService
             }
 
             var update = updates.First();
+
+            codeFlowStatus ??= await _codeFlowState.TryGetStateAsync();
 
             // The E2E order of things for is:
             // 1. We send a request to PCS and wait for a branch to be created. We note down this in the codeflow status. We set a reminder.
@@ -1117,29 +1118,30 @@ namespace SubscriptionActorService
                 (string targetRepository, string targetBranch) = await GetTargetAsync();
 
                 // Step 1. Let PCS create a branch for us
-                if (codeFlowUpdate == null)
+                if (codeFlowStatus == null)
                 {
                     return await RequestCodeFlowBranchAsync(update, targetBranch);
                 }
 
                 // Step 2. Wait for the branch to be created
                 IRemote remote = await _remoteFactory.GetRemoteAsync(targetRepository, _logger);
-                if (!await remote.BranchExistsAsync(targetRepository, codeFlowUpdate.PrBranch))
+                if (!await remote.BranchExistsAsync(targetRepository, codeFlowStatus.PrBranch))
                 {
                     _logger.LogInformation("Branch {branch} for subscription {subscriptionId} not created yet. Will check again later",
-                        codeFlowUpdate.PrBranch,
+                        codeFlowStatus.PrBranch,
                         update.SubscriptionId);
 
-                    return ActionResult.Create(true, $"Pending updates applied. Branch {codeFlowUpdate.PrBranch} not created yet");
+                    await _codeFlowState.SetReminderAsync(dueTimeInMinutes: 3);
+                    return ActionResult.Create(true, $"Pending updates applied. Branch {codeFlowStatus.PrBranch} not created yet");
                 }
 
                 // Step 3. Create a PR
                 string prUrl = await CreateCodeFlowPullRequestAsync(
                     update,
-                    codeFlowUpdate,
+                    codeFlowStatus,
                     targetRepository,
                     targetBranch,
-                    codeFlowUpdate.PrBranch);
+                    codeFlowStatus.PrBranch);
 
                 await _pullRequestUpdateState.RemoveStateAsync();
                 await _pullRequestUpdateState.UnsetReminderAsync();
@@ -1148,7 +1150,7 @@ namespace SubscriptionActorService
             }
 
             // Technically, this should never happen as we create the code flow data before we even create the PR
-            if (codeFlowUpdate == null)
+            if (codeFlowStatus == null)
             {
                 _logger.LogError("Missing code flow data for subscription {subscription}", update.SubscriptionId);
                 await _pullRequestUpdateState.RemoveStateAsync();
@@ -1166,7 +1168,7 @@ namespace SubscriptionActorService
             // Step 4. Update the PR (if needed)
 
             // Compare last SHA with the build SHA to see if we need to delegate this update to PCS
-            if (update.SourceSha == codeFlowUpdate.SourceSha)
+            if (update.SourceSha == codeFlowStatus.SourceSha)
             {
                 _logger.LogInformation("PR {url} for {subscription} is up to date ({sha})",
                     pr.Url,
@@ -1181,7 +1183,7 @@ namespace SubscriptionActorService
                 {
                     BuildId = update.BuildId,
                     SubscriptionId = update.SubscriptionId,
-                    PrBranch = codeFlowUpdate.PrBranch,
+                    PrBranch = codeFlowStatus.PrBranch,
                     PrUrl = pr.Url,
                 });
             }

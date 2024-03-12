@@ -113,6 +113,16 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
         return base.BeforeExecute(context);
     }
 
+    private void GivenAPendingCodeFlowReminder()
+    {
+        var reminder = new MockReminderManager.Reminder(
+            PullRequestActorImplementation.CodeFlowKey,
+            null,
+            TimeSpan.FromMinutes(3),
+            TimeSpan.FromMinutes(3));
+        Reminders.Data[PullRequestActorImplementation.CodeFlowKey] = reminder;
+    }
+
     private void ThenGetRequiredUpdatesShouldHaveBeenCalled(Build withBuild)
     {
         var assets = new List<IEnumerable<AssetData>>();
@@ -214,6 +224,13 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
         return pcsRequests[0].PrBranch;
     }
 
+    private void AndPcsShouldNotHaveBeenCalled(Build build)
+    {
+        _pcsClientCodeFlow.Verify(
+            r => r.FlowAsync(It.Is<CodeFlowRequest>(r => r.BuildId == build.Id), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     private static void ValidatePRDescriptionContainsLinks(PullRequest pr)
     {
         pr.Description.Should().Contain("][1]");
@@ -225,6 +242,20 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
         _darcRemotes[TargetRepo]
             .Setup(s => s.CreatePullRequestAsync(It.IsAny<string>(), It.IsAny<PullRequest>()))
             .ReturnsAsync(() => PrUrl);
+    }
+
+    private void WithExistingPrBranch()
+    {
+        _darcRemotes[TargetRepo]
+            .Setup(s => s.BranchExistsAsync(TargetRepo, It.IsAny<string>()))
+            .ReturnsAsync(true);
+    }
+
+    private void WithoutExistingPrBranch()
+    {
+        _darcRemotes[TargetRepo]
+            .Setup(s => s.BranchExistsAsync(TargetRepo, It.IsAny<string>()))
+            .ReturnsAsync(false);
     }
 
     private void AndUpdatePullRequestShouldHaveBeenCalled()
@@ -385,7 +416,7 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
             });
     }
 
-    private IDisposable WithExistingCodeFlowStatus(Build build)
+    private void WithExistingCodeFlowStatus(Build build)
     {
         AfterDbUpdateActions.Add(() =>
         {
@@ -395,33 +426,7 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
                 SourceSha = build.Commit,
             };
             StateManager.SetStateAsync(PullRequestActorImplementation.CodeFlowKey, status);
-            ExpectedActorState.Add(PullRequestActorImplementation.CodeFlowKey, status);
         });
-
-        ActionRunner.Setup(r => r.ExecuteAction(It.IsAny<Expression<Func<Task<ActionResult<SynchronizePullRequestResult>>>>>()))
-            .ReturnsAsync(checkResult);
-
-        if (checkResult == SynchronizePullRequestResult.InProgressCanUpdate)
-        {
-            _darcRemotes.GetOrAddValue(TargetRepo, CreateMock<IRemote>)
-                .Setup(r => r.GetPullRequestAsync(InProgressPrUrl))
-                .ReturnsAsync(
-                    new PullRequest
-                    {
-                        HeadBranch = InProgressPrHeadBranch,
-                        BaseBranch = TargetBranch
-                    });
-        }
-
-        return Disposable.Create(
-            () =>
-            {
-                ActionRunner.Verify(r => r.ExecuteAction(It.IsAny<Expression<Func<Task<ActionResult<SynchronizePullRequestResult>>>>>()));
-                if (checkResult == SynchronizePullRequestResult.InProgressCanUpdate)
-                {
-                    _darcRemotes[TargetRepo].Verify(r => r.GetPullRequestAsync(InProgressPrUrl));
-                }
-            });
     }
 
     private void AndShouldHavePullRequestCheckReminder()
@@ -855,7 +860,7 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
         }
 
         [Test]
-        public async Task UpdateWithCodeFlowWithInitialUpdateAndNoExistingPrBranch()
+        public async Task UpdateWithCodeFlowWaitingForPrBranch()
         {
             GivenATestChannel();
             GivenACodeFlowSubscription(
@@ -866,12 +871,15 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
                 });
             Build build = GivenANewBuild(true);
 
+            WithExistingCodeFlowStatus(build);
+            GivenAPendingCodeFlowReminder();
+            WithoutExistingPrBranch();
+
             await WhenUpdateAssetsAsyncIsCalled(build);
 
             ThenShouldHaveCodeFlowReminder();
-            var requestedBranch = AndPcsShouldHaveBeenCalled(build);
-            AndShouldHaveCodeFlowState(build, requestedBranch);
-            AndShouldHavePendingUpdateState(build, isCodeFlow: true);
+            AndPcsShouldNotHaveBeenCalled(build);
+            AndShouldHaveCodeFlowState(build, InProgressPrHeadBranch);
         }
     }
 }
