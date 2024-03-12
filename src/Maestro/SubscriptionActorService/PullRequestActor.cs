@@ -1138,13 +1138,9 @@ namespace SubscriptionActorService
                 // Step 3. Create a PR
                 string prUrl = await CreateCodeFlowPullRequestAsync(
                     update,
-                    codeFlowStatus,
                     targetRepository,
-                    targetBranch,
-                    codeFlowStatus.PrBranch);
-
-                await _pullRequestUpdateState.RemoveStateAsync();
-                await _pullRequestUpdateState.UnsetReminderAsync();
+                    codeFlowStatus.PrBranch,
+                    targetBranch);
 
                 return ActionResult.Create(true, $"Pending updates applied. PR {prUrl} created");
             }
@@ -1237,7 +1233,6 @@ namespace SubscriptionActorService
 
         private async Task<string> CreateCodeFlowPullRequestAsync(
             UpdateAssetsParameters update,
-            CodeFlowStatus codeFlowUpdate,
             string targetRepository,
             string prBranch,
             string targetBranch)
@@ -1269,8 +1264,7 @@ namespace SubscriptionActorService
                             SubscriptionId = update.SubscriptionId,
                             BuildId = update.BuildId
                         }
-                    ],
-                    CoherencyCheckSuccessful = true,
+                    ]
                 };
 
                 await AddDependencyFlowEventsAsync(
@@ -1282,6 +1276,9 @@ namespace SubscriptionActorService
 
                 await _pullRequestState.StoreStateAsync(inProgressPr);
                 await _pullRequestCheckState.SetReminderAsync();
+                await _codeFlowState.UnsetReminderAsync();
+                await _pullRequestUpdateState.RemoveStateAsync();
+                await _pullRequestUpdateState.UnsetReminderAsync();
 
                 return prUrl;
             }

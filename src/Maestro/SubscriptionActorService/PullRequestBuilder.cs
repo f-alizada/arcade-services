@@ -90,14 +90,16 @@ internal class PullRequestBuilder : IPullRequestBuilder
         UpdateAssetsParameters update,
         string targetBranch)
     {
-        throw new NotImplementedException();
+        // TODO
+        return Task.FromResult("PR Title");
     }
 
     public Task<string> GenerateCodeFlowPullRequestDescriptionAsync(
         UpdateAssetsParameters update,
         string targetBranch)
     {
-        throw new NotImplementedException();
+        // TODO
+        return Task.FromResult("PR Description");
     }
 
     public async Task<string> GeneratePullRequestTitleAsync(InProgressPullRequest inProgressPr, string targetBranch)
