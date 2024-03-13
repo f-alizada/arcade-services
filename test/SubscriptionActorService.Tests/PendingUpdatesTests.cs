@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Maestro.Data.Models;
 using NUnit.Framework;
 using SubscriptionActorService.StateModel;
+
 using Asset = Maestro.Contracts.Asset;
 
 namespace SubscriptionActorService.Tests;
