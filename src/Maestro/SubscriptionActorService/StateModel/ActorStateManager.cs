@@ -1,9 +1,7 @@
 ﻿// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using System;
 using System.Threading.Tasks;
-using Microsoft.DotNet.ServiceFabric.ServiceHost.Actors;
 using Microsoft.ServiceFabric.Actors.Runtime;
 using Microsoft.ServiceFabric.Data;
 
@@ -18,16 +16,13 @@ internal class ActorStateManager<T> where T : class
     protected const int DefaultDueTimeInMinutes = 5;
 
     private readonly IActorStateManager _stateManager;
-    private readonly IReminderManager _reminderManager;
     private readonly string _key;
 
     public ActorStateManager(
         IActorStateManager stateManager,
-        IReminderManager reminderManager,
         string key)
     {
         _stateManager = stateManager;
-        _reminderManager = reminderManager;
         _key = key;
     }
 
@@ -46,19 +41,5 @@ internal class ActorStateManager<T> where T : class
     public async Task RemoveStateAsync()
     {
         await _stateManager.TryRemoveStateAsync(_key);
-    }
-
-    public virtual async Task SetReminderAsync(int dueTimeInMinutes = DefaultDueTimeInMinutes)
-    {
-        await _reminderManager.TryRegisterReminderAsync(
-            _key,
-            null,
-            TimeSpan.FromMinutes(dueTimeInMinutes),
-            TimeSpan.FromMinutes(dueTimeInMinutes));
-    }
-
-    public async Task UnsetReminderAsync()
-    {
-        await _reminderManager.TryUnregisterReminderAsync(_key);
     }
 }

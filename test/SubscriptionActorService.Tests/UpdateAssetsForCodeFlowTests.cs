@@ -1,20 +1,16 @@
 ﻿// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Maestro.Data.Models;
 using NUnit.Framework;
 using SubscriptionActorService.StateModel;
-
 using Asset = Maestro.Contracts.Asset;
 
 namespace SubscriptionActorService.Tests;
-
-/*
- * TODO: Try removing code flow state / reminders and adding the data to existing state
- *       Fix when there should be an update and when we get the update from the method call directly
- */
 
 /// <summary>
 /// Tests the code flow PR update logic.
@@ -46,6 +42,43 @@ internal class UpdateAssetsForCodeFlowTests : PullRequestActorTests
             });
     }
 
+    protected override void ThenShouldHavePendingUpdateState(Build forBuild, bool _ = false)
+    {
+        base.ThenShouldHavePendingUpdateState(forBuild, true);
+    }
+
+    protected void GivenPendingUpdates(Build forBuild)
+    {
+        AfterDbUpdateActions.Add(
+            () =>
+            {
+                var updates = new List<UpdateAssetsParameters>
+                {
+                    new()
+                    {
+                        SubscriptionId = Subscription.Id,
+                        BuildId = forBuild.Id,
+                        SourceRepo = forBuild.GitHubRepository ?? forBuild.AzureDevOpsRepository,
+                        SourceSha = forBuild.Commit,
+                        Assets = forBuild.Assets
+                            .Select(a => new Asset {Name = a.Name, Version = a.Version})
+                            .ToList(),
+                        IsCoherencyUpdate = false,
+                        IsCodeFlow = true,
+                    }
+                };
+
+                var reminder = new MockReminderManager.Reminder(
+                    PullRequestActorImplementation.PullRequestUpdateKey,
+                    null,
+                    TimeSpan.FromMinutes(3),
+                    TimeSpan.FromMinutes(3));
+
+                StateManager.Data[PullRequestActorImplementation.PullRequestUpdateKey] = updates;
+                Reminders.Data[PullRequestActorImplementation.PullRequestUpdateKey] = reminder;
+            });
+    }
+
     [Test]
     public async Task UpdateWithNoExistingStateOrPrBranch()
     {
@@ -57,16 +90,18 @@ internal class UpdateAssetsForCodeFlowTests : PullRequestActorTests
                 UpdateFrequency = UpdateFrequency.EveryBuild,
             });
         Build build = GivenANewBuild(true);
+
         ExpectPcsToGetCalled(build);
 
         await WhenUpdateAssetsAsyncIsCalled(build);
 
-        ThenShouldHaveCodeFlowReminder();
-        var requestedBranch = AndPcsShouldHaveBeenCalled(build);
+        ThenShouldHavePendingUpdateState(build);
+        AndPcsShouldHaveBeenCalled(build, prUrl: null, out var requestedBranch);
         AndShouldHaveCodeFlowState(build, requestedBranch);
         AndShouldHaveFollowingState(
-            codeFlowState: true,
-            codeFlowReminder: true);
+            pullRequestUpdateState: true,
+            pullRequestUpdateReminder: true,
+            codeFlowState: true);
     }
 
     [Test]
@@ -81,20 +116,18 @@ internal class UpdateAssetsForCodeFlowTests : PullRequestActorTests
             });
         Build build = GivenANewBuild(true);
 
-        GivenAPendingCodeFlowReminder();
-        GivenPendingUpdates(build, true);
+        GivenPendingUpdates(build);
         WithExistingCodeFlowStatus(build);
         WithoutExistingPrBranch();
 
         await WhenUpdateAssetsAsyncIsCalled(build);
 
-        ThenShouldHaveCodeFlowReminder();
+        ThenShouldHavePendingUpdateState(build);
         AndShouldHaveCodeFlowState(build, InProgressPrHeadBranch);
-        AndShouldHavePendingUpdateState(build, isCodeFlow: true);
         AndShouldHaveFollowingState(
             codeFlowState: true,
-            codeFlowReminder: true,
-            pullRequestUpdateState: true);
+            pullRequestUpdateState: true,
+            pullRequestUpdateReminder: true);
     }
 
     [Test]
@@ -109,8 +142,7 @@ internal class UpdateAssetsForCodeFlowTests : PullRequestActorTests
             });
         Build build = GivenANewBuild(true);
 
-        GivenAPendingCodeFlowReminder();
-        GivenPendingUpdates(build, true);
+        GivenPendingUpdates(build);
         WithExistingCodeFlowStatus(build);
         WithExistingPrBranch();
         CreatePullRequestShouldReturnAValidValue();
@@ -150,7 +182,7 @@ internal class UpdateAssetsForCodeFlowTests : PullRequestActorTests
             await WhenUpdateAssetsAsyncIsCalled(build);
 
             AndShouldHaveCodeFlowState(build, InProgressPrHeadBranch);
-            AndShouldHavePendingUpdateState(build, isCodeFlow: true);
+            ThenShouldHavePendingUpdateState(build);
             AndShouldHaveFollowingState(
                 codeFlowState: true,
                 pullRequestState: true,
@@ -212,7 +244,7 @@ internal class UpdateAssetsForCodeFlowTests : PullRequestActorTests
         {
             await WhenUpdateAssetsAsyncIsCalled(newBuild);
 
-            AndPcsShouldHaveBeenCalled(newBuild, InProgressPrUrl);
+            AndPcsShouldHaveBeenCalled(newBuild, InProgressPrUrl, out _);
             AndShouldHaveCodeFlowState(newBuild, InProgressPrHeadBranch);
             AndShouldHavePullRequestCheckReminder();
             AndShouldHaveFollowingState(

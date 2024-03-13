@@ -113,30 +113,6 @@ internal abstract class PullRequestActorTests : SubscriptionOrPullRequestActorTe
         return base.BeforeExecute(context);
     }
 
-    protected void GivenPendingUpdates(Build forBuild, bool isCodeFlow)
-    {
-        AfterDbUpdateActions.Add(
-            () =>
-            {
-                var updates = new List<UpdateAssetsParameters>
-                {
-                    new()
-                    {
-                        SubscriptionId = Subscription.Id,
-                        BuildId = forBuild.Id,
-                        SourceRepo = forBuild.GitHubRepository ?? forBuild.AzureDevOpsRepository,
-                        SourceSha = forBuild.Commit,
-                        Assets = forBuild.Assets
-                            .Select(a => new Asset {Name = a.Name, Version = a.Version})
-                            .ToList(),
-                        IsCoherencyUpdate = false,
-                        IsCodeFlow = isCodeFlow,
-                    }
-                };
-                StateManager.Data[PullRequestActorImplementation.PullRequestUpdateKey] = updates;
-            });
-    }
-
     protected void GivenAPullRequestCheckReminder()
     {
         var reminder = new MockReminderManager.Reminder(
@@ -145,16 +121,6 @@ internal abstract class PullRequestActorTests : SubscriptionOrPullRequestActorTe
             TimeSpan.FromMinutes(3),
             TimeSpan.FromMinutes(3));
         Reminders.Data[PullRequestActorImplementation.PullRequestCheckKey] = reminder;
-    }
-
-    protected void GivenAPendingCodeFlowReminder()
-    {
-        var reminder = new MockReminderManager.Reminder(
-            PullRequestActorImplementation.CodeFlowKey,
-            null,
-            TimeSpan.FromMinutes(3),
-            TimeSpan.FromMinutes(3));
-        Reminders.Data[PullRequestActorImplementation.CodeFlowKey] = reminder;
     }
 
     protected void ThenGetRequiredUpdatesShouldHaveBeenCalled(Build withBuild)
@@ -257,7 +223,7 @@ internal abstract class PullRequestActorTests : SubscriptionOrPullRequestActorTe
                     .Excluding(pr => pr.Description));
     }
 
-    protected string AndPcsShouldHaveBeenCalled(Build build, string? prUrl = null)
+    protected void AndPcsShouldHaveBeenCalled(Build build, string? prUrl, out string prBranch)
     {
         var pcsRequests = new List<CodeFlowRequest>();
         _pcsClientCodeFlow
@@ -276,7 +242,7 @@ internal abstract class PullRequestActorTests : SubscriptionOrPullRequestActorTe
                 },
                 options => options.Excluding(r => r.PrBranch));
 
-        return pcsRequests[0].PrBranch;
+        prBranch = pcsRequests[0].PrBranch;
     }
 
     protected void ExpectPcsToGetCalled(Build build, string? prUrl = null)
@@ -517,17 +483,6 @@ internal abstract class PullRequestActorTests : SubscriptionOrPullRequestActorTe
                 TimeSpan.FromMinutes(5)));
     }
 
-    protected void ThenShouldHaveCodeFlowReminder()
-    {
-        ExpectedReminders.Add(
-            PullRequestActorImplementation.CodeFlowKey,
-            new MockReminderManager.Reminder(
-                PullRequestActorImplementation.CodeFlowKey,
-                null,
-                TimeSpan.FromMinutes(3),
-                TimeSpan.FromMinutes(3)));
-    }
-
     protected void AndShouldHaveInProgressPullRequestState(
         Build forBuild,
         bool coherencyCheckSuccessful = true,
@@ -588,7 +543,7 @@ internal abstract class PullRequestActorTests : SubscriptionOrPullRequestActorTe
             });
     }
 
-    protected void AndShouldHavePendingUpdateState(Build forBuild, bool isCodeFlow = false)
+    protected virtual void ThenShouldHavePendingUpdateState(Build forBuild, bool isCodeFlow = false)
     {
         ExpectedActorState.Add(
             PullRequestActorImplementation.PullRequestUpdateKey,
@@ -616,7 +571,7 @@ internal abstract class PullRequestActorTests : SubscriptionOrPullRequestActorTe
             PullRequestActorImplementation.PullRequestUpdateKey,
             new MockReminderManager.Reminder(
                 PullRequestActorImplementation.PullRequestUpdateKey,
-                [],
+                null,
                 TimeSpan.FromMinutes(5),
                 TimeSpan.FromMinutes(5)));
     }
@@ -625,27 +580,37 @@ internal abstract class PullRequestActorTests : SubscriptionOrPullRequestActorTe
         bool pullRequestUpdateState = false,
         bool pullRequestUpdateReminder = false,
         bool pullRequestState = false,
-        bool pullRequestReminder = false,
         bool pullRequestCheckState = false,
         bool pullRequestCheckReminder = false,
-        bool codeFlowState = false,
-        bool codeFlowReminder = false)
+        bool codeFlowState = false)
     {
         Dictionary<string, (bool HasState, bool HasReminder)> keys = new()
         {
             { PullRequestActorImplementation.PullRequestUpdateKey, (pullRequestUpdateState, pullRequestUpdateReminder) },
             { PullRequestActorImplementation.PullRequestCheckKey, (pullRequestCheckState, pullRequestCheckReminder) },
-            { PullRequestActorImplementation.PullRequestKey, (pullRequestState, pullRequestReminder) },
-            { PullRequestActorImplementation.CodeFlowKey, (codeFlowState, codeFlowReminder) },
+            { PullRequestActorImplementation.PullRequestKey, (pullRequestState, false /* no codeflow reminders allowed */) },
+            { PullRequestActorImplementation.CodeFlowKey, (codeFlowState, false /* no codeflow reminders allowed */) },
         };
 
         foreach (var (key, (hasState, hasReminder)) in keys)
         {
-            StateManager.Data.ContainsKey(key).Should().Be(hasState,
-                $"{key} state should {(hasState ? string.Empty : "not ")}be set");
+            if (hasState)
+            {
+                StateManager.Data.Keys.Should().Contain(key);
+            }
+            else
+            {
+                StateManager.Data.Keys.Should().NotContain(key);
+            }
 
-            Reminders.Data.ContainsKey(key).Should().Be(hasReminder,
-                $"{key} reminder should {(hasReminder ? string.Empty : "not ")}be set");
+            if (hasReminder)
+            {
+                Reminders.Data.Keys.Should().Contain(key);
+            }
+            else
+            {
+                Reminders.Data.Keys.Should().NotContain(key);
+            }
         }
     }
 

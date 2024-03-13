@@ -9,13 +9,13 @@ namespace SubscriptionActorService.Tests;
 [TestFixture, NonParallelizable]
 internal class PendingCodeFlowUpdatesTests : PullRequestActorTests
 {
-    private async Task WhenProcessCodeFlowReminderAsyncIsCalled()
-    {
-        await Execute(
-            async context =>
-            {
-                PullRequestActor actor = CreateActor(context);
-                await actor.Implementation!.ProcessCodeFlowReminderAsync();
-            });
-    }
+    //private async Task WhenProcessCodeFlowReminderAsyncIsCalled()
+    //{
+    //    await Execute(
+    //        async context =>
+    //        {
+    //            PullRequestActor actor = CreateActor(context);
+    //            await actor.Implementation!.ProcessCodeFlowReminderAsync();
+    //        });
+    //}
 }

@@ -113,8 +113,7 @@ internal class UpdateAssetsTests : PullRequestActorTests
         using (WithExistingPullRequest(SynchronizePullRequestResult.InProgressCannotUpdate))
         {
             await WhenUpdateAssetsAsyncIsCalled(b);
-
-            AndShouldHavePendingUpdateState(b);
+            ThenShouldHavePendingUpdateState(b);
         }
     }
 
