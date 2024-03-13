@@ -37,7 +37,7 @@ public class SubscriptionActorTests : SubscriptionOrPullRequestActorTests
             {
                 Mock<IPullRequestActor> mock = _pullRequestActors.GetOrAddValue(
                     actorId,
-                    CreateMock<IPullRequestActor>);
+                    () => CreateMock<IPullRequestActor>());
                 return mock.Object;
             });
         services.AddSingleton(proxyFactory.Object);

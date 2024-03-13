@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Linq.Expressions;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -37,9 +36,9 @@ namespace SubscriptionActorService.Tests;
 internal abstract class PullRequestActorTests : SubscriptionOrPullRequestActorTests
 {
     private const long InstallationId = 1174;
-    private const string InProgressPrUrl = "https://github.com/owner/repo/pull/10";
+    protected const string InProgressPrUrl = "https://github.com/owner/repo/pull/10";
     protected const string InProgressPrHeadBranch = "pr.head.branch";
-    private const string PrUrl = "https://git.com/pr/123";
+    protected const string PrUrl = "https://git.com/pr/123";
 
     private Dictionary<string, Mock<IRemote>> _darcRemotes = null!;
     private Dictionary<ActorId, Mock<ISubscriptionActor>> _subscriptionActors = null!;
@@ -47,7 +46,6 @@ internal abstract class PullRequestActorTests : SubscriptionOrPullRequestActorTe
     private Mock<IRemoteFactory> _remoteFactory = null!;
     private Mock<ICoherencyUpdateResolver> _updateResolver = null!;
     private Mock<IMergePolicyEvaluator> _mergePolicyEvaluator = null!;
-    private Mock<IProductConstructionServiceApi> _pcsClient = null!;
     private Mock<ICodeFlow> _pcsClientCodeFlow = null!;
 
     private string _newBranch = null!;
@@ -63,8 +61,7 @@ internal abstract class PullRequestActorTests : SubscriptionOrPullRequestActorTe
         _mergePolicyEvaluator = CreateMock<IMergePolicyEvaluator>();
         _remoteFactory = new(MockBehavior.Strict);
         _updateResolver = new(MockBehavior.Strict);
-        _pcsClient = new();
-        _pcsClientCodeFlow = new(MockBehavior.Strict);
+        _pcsClientCodeFlow = CreateMock<ICodeFlow>(MockBehavior.Strict);
     }
 
     protected override void RegisterServices(IServiceCollection services)
@@ -75,12 +72,9 @@ internal abstract class PullRequestActorTests : SubscriptionOrPullRequestActorTe
             {
                 Mock<ISubscriptionActor> mock = _subscriptionActors.GetOrAddValue(
                     actorId,
-                    CreateMock<ISubscriptionActor>);
+                    () => CreateMock<ISubscriptionActor>());
                 return mock.Object;
             });
-
-        _pcsClient.SetReturnsDefault(_pcsClientCodeFlow.Object);
-        _pcsClientCodeFlow.SetReturnsDefault(Task.CompletedTask);
 
         services.AddSingleton(proxyFactory.Object);
         services.AddSingleton(_mergePolicyEvaluator.Object);
@@ -91,14 +85,18 @@ internal abstract class PullRequestActorTests : SubscriptionOrPullRequestActorTe
         services.AddSingleton<IGitHubClientFactory, GitHubClientFactory>();
         services.AddScoped<IBasicBarClient, SqlBarClient>();
         services.AddTransient<IPullRequestBuilder, PullRequestBuilder>();
-        services.AddSingleton(_pcsClient.Object);
         services.AddSingleton(_updateResolver.Object);
 
         _remoteFactory.Setup(f => f.GetRemoteAsync(It.IsAny<string>(), It.IsAny<ILogger>()))
             .ReturnsAsync(
                 (string repo, ILogger logger) =>
-                    _darcRemotes.GetOrAddValue(repo, CreateMock<IRemote>).Object);
+                    _darcRemotes.GetOrAddValue(repo, () => CreateMock<IRemote>()).Object);
         services.AddSingleton(_remoteFactory.Object);
+
+        // PCS client
+        var pcsApi = Mock.Of<IProductConstructionServiceApi>(x => x.CodeFlow == _pcsClientCodeFlow.Object);
+        _pcsClientCodeFlow.SetReturnsDefault(Task.CompletedTask);
+        services.AddSingleton(pcsApi);
 
         base.RegisterServices(services);
     }
@@ -259,7 +257,7 @@ internal abstract class PullRequestActorTests : SubscriptionOrPullRequestActorTe
                     .Excluding(pr => pr.Description));
     }
 
-    protected string AndPcsShouldHaveBeenCalled(Build build)
+    protected string AndPcsShouldHaveBeenCalled(Build build, string? prUrl = null)
     {
         var pcsRequests = new List<CodeFlowRequest>();
         _pcsClientCodeFlow
@@ -273,7 +271,7 @@ internal abstract class PullRequestActorTests : SubscriptionOrPullRequestActorTe
                     {
                         SubscriptionId = Subscription.Id,
                         BuildId = build.Id,
-                        PrUrl = null,
+                        PrUrl = prUrl,
                     }
                 },
                 options => options.Excluding(r => r.PrBranch));
@@ -281,11 +279,14 @@ internal abstract class PullRequestActorTests : SubscriptionOrPullRequestActorTe
         return pcsRequests[0].PrBranch;
     }
 
-    protected void AndPcsShouldNotHaveBeenCalled(Build build)
+    protected void ExpectPcsToGetCalled(Build build, string? prUrl = null)
     {
-        _pcsClientCodeFlow.Verify(
-            r => r.FlowAsync(It.Is<CodeFlowRequest>(r => r.BuildId == build.Id), It.IsAny<CancellationToken>()),
-            Times.Never);
+        _pcsClientCodeFlow
+            .Setup(r => r.FlowAsync(
+                It.Is<CodeFlowRequest>(r => r.BuildId == build.Id && r.SubscriptionId == Subscription.Id && r.PrUrl == prUrl),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask)
+            .Verifiable();
     }
 
     protected static void ValidatePRDescriptionContainsLinks(PullRequest pr)
@@ -452,7 +453,7 @@ internal abstract class PullRequestActorTests : SubscriptionOrPullRequestActorTe
 
         if (checkResult == SynchronizePullRequestResult.InProgressCanUpdate)
         {
-            _darcRemotes.GetOrAddValue(TargetRepo, CreateMock<IRemote>)
+            _darcRemotes.GetOrAddValue(TargetRepo, () => CreateMock<IRemote>())
                 .Setup(r => r.GetPullRequestAsync(InProgressPrUrl))
                 .ReturnsAsync(
                     new PullRequest

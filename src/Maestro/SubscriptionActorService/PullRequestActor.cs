@@ -1173,6 +1173,12 @@ namespace SubscriptionActorService
                     PrBranch = codeFlowStatus.PrBranch,
                     PrUrl = pr.Url,
                 });
+
+                codeFlowStatus.SourceSha = update.SourceSha;
+
+                await _codeFlowState.StoreStateAsync(codeFlowStatus);
+                await _pullRequestState.StoreStateAsync(pr);
+                await _pullRequestCheckState.SetReminderAsync();
             }
             catch (Exception e)
             {
@@ -1213,13 +1219,14 @@ namespace SubscriptionActorService
                 _logger.LogError(e, "Failed to request new branch {branch} for subscription {subscriptionId}",
                     codeFlowUpdate.PrBranch,
                     update.SubscriptionId);
+                return ActionResult.Create(false, $"Failed to call PCS when requesting branch {codeFlowUpdate.PrBranch}");
             }
 
             await _codeFlowState.StoreStateAsync(codeFlowUpdate);
             await _codeFlowState.SetReminderAsync(dueTimeInMinutes: 3);
             await _pullRequestUpdateState.StoreItemStateAsync(update);
 
-            return ActionResult.Create(true, $"Pending updates applied. Branch {codeFlowUpdate.PrBranch} requested from PCS.");
+            return ActionResult.Create(true, $"Pending updates applied. Branch {codeFlowUpdate.PrBranch} requested from PCS");
         }
 
         private async Task<string> CreateCodeFlowPullRequestAsync(

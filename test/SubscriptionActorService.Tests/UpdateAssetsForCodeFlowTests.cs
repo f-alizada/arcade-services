@@ -11,6 +11,11 @@ using Asset = Maestro.Contracts.Asset;
 
 namespace SubscriptionActorService.Tests;
 
+/// <summary>
+/// Tests the code flow PR update logic.
+/// The tests are writter in the order in which the different phases of the PR are written.
+/// Each test should have the inner state that is left behind by the previous state.
+/// </summary>
 [TestFixture, NonParallelizable]
 internal class UpdateAssetsForCodeFlowTests : PullRequestActorTests
 {
@@ -24,7 +29,7 @@ internal class UpdateAssetsForCodeFlowTests : PullRequestActorTests
                     Subscription.Id,
                     forBuild.Id,
                     SourceRepo,
-                    NewCommit,
+                    forBuild.Commit,
                     forBuild.Assets.Select(
                         a => new Asset
                         {
@@ -47,6 +52,7 @@ internal class UpdateAssetsForCodeFlowTests : PullRequestActorTests
                 UpdateFrequency = UpdateFrequency.EveryBuild,
             });
         Build build = GivenANewBuild(true);
+        ExpectPcsToGetCalled(build);
 
         await WhenUpdateAssetsAsyncIsCalled(build);
 
@@ -80,7 +86,6 @@ internal class UpdateAssetsForCodeFlowTests : PullRequestActorTests
         await WhenUpdateAssetsAsyncIsCalled(build);
 
         ThenShouldHaveCodeFlowReminder();
-        AndPcsShouldNotHaveBeenCalled(build);
         AndShouldHaveCodeFlowState(build, InProgressPrHeadBranch);
         AndShouldHavePendingUpdateState(build, isCodeFlow: true);
         AndShouldHaveFollowingState(
@@ -110,7 +115,6 @@ internal class UpdateAssetsForCodeFlowTests : PullRequestActorTests
         await WhenUpdateAssetsAsyncIsCalled(build);
 
         ThenUpdateReminderIsRemoved();
-        AndPcsShouldNotHaveBeenCalled(build);
         AndCodeFlowPullRequestShouldHaveBeenCreated();
         AndShouldHaveCodeFlowState(build, InProgressPrHeadBranch);
         AndShouldHavePullRequestCheckReminder();
@@ -143,7 +147,6 @@ internal class UpdateAssetsForCodeFlowTests : PullRequestActorTests
         {
             await WhenUpdateAssetsAsyncIsCalled(build);
 
-            AndPcsShouldNotHaveBeenCalled(build);
             AndShouldHaveCodeFlowState(build, InProgressPrHeadBranch);
             AndShouldHavePullRequestCheckReminder();
             AndShouldHaveFollowingState(
@@ -173,7 +176,6 @@ internal class UpdateAssetsForCodeFlowTests : PullRequestActorTests
         {
             await WhenUpdateAssetsAsyncIsCalled(build);
 
-            AndPcsShouldNotHaveBeenCalled(build);
             AndShouldHaveCodeFlowState(build, InProgressPrHeadBranch);
             AndShouldHavePullRequestCheckReminder();
             AndShouldHaveFollowingState(
@@ -201,12 +203,13 @@ internal class UpdateAssetsForCodeFlowTests : PullRequestActorTests
         GivenAPullRequestCheckReminder();
         WithExistingCodeFlowStatus(oldBuild);
         WithExistingPrBranch();
+        ExpectPcsToGetCalled(newBuild);
 
         using (WithExistingCodeFlowPullRequest(SynchronizePullRequestResult.InProgressCanUpdate))
         {
             await WhenUpdateAssetsAsyncIsCalled(newBuild);
 
-            AndPcsShouldHaveBeenCalled(newBuild);
+            AndPcsShouldHaveBeenCalled(newBuild, InProgressPrUrl);
             AndShouldHaveCodeFlowState(newBuild, InProgressPrHeadBranch);
             AndShouldHavePullRequestCheckReminder();
             AndShouldHaveFollowingState(
