@@ -1267,6 +1267,7 @@ namespace SubscriptionActorService
 
                 await _pullRequestState.StoreStateAsync(inProgressPr);
                 await _pullRequestCheckState.SetReminderAsync();
+
                 await _codeFlowState.UnsetReminderAsync();
                 await _pullRequestUpdateState.RemoveStateAsync();
                 await _pullRequestUpdateState.UnsetReminderAsync();

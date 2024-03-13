@@ -26,8 +26,10 @@ using NUnit.Framework;
 using ProductConstructionService.Client;
 using ProductConstructionService.Client.Models;
 using SubscriptionActorService.StateModel;
+
 using Asset = Maestro.Contracts.Asset;
 using AssetData = Microsoft.DotNet.Maestro.Client.Models.AssetData;
+using SynchronizePullRequestAction = System.Linq.Expressions.Expression<System.Func<System.Threading.Tasks.Task<SubscriptionActorService.ActionResult<SubscriptionActorService.StateModel.SynchronizePullRequestResult>>>>;
 
 namespace SubscriptionActorService.Tests;
 
@@ -113,16 +115,6 @@ internal class PullRequestActorTests : SubscriptionOrPullRequestActorTests
         return base.BeforeExecute(context);
     }
 
-    protected void GivenAPendingCodeFlowReminder()
-    {
-        var reminder = new MockReminderManager.Reminder(
-            PullRequestActorImplementation.CodeFlowKey,
-            null,
-            TimeSpan.FromMinutes(3),
-            TimeSpan.FromMinutes(3));
-        Reminders.Data[PullRequestActorImplementation.CodeFlowKey] = reminder;
-    }
-
     protected void GivenPendingUpdates(Build forBuild, bool isCodeFlow)
     {
         AfterDbUpdateActions.Add(
@@ -145,6 +137,26 @@ internal class PullRequestActorTests : SubscriptionOrPullRequestActorTests
                 };
                 StateManager.Data[PullRequestActorImplementation.PullRequestUpdateKey] = updates;
             });
+    }
+
+    protected void GivenAPullRequestCheckReminder()
+    {
+        var reminder = new MockReminderManager.Reminder(
+            PullRequestActorImplementation.PullRequestCheckKey,
+            null,
+            TimeSpan.FromMinutes(3),
+            TimeSpan.FromMinutes(3));
+        Reminders.Data[PullRequestActorImplementation.PullRequestCheckKey] = reminder;
+    }
+
+    protected void GivenAPendingCodeFlowReminder()
+    {
+        var reminder = new MockReminderManager.Reminder(
+            PullRequestActorImplementation.CodeFlowKey,
+            null,
+            TimeSpan.FromMinutes(3),
+            TimeSpan.FromMinutes(3));
+        Reminders.Data[PullRequestActorImplementation.CodeFlowKey] = reminder;
     }
 
     protected void ThenGetRequiredUpdatesShouldHaveBeenCalled(Build withBuild)
@@ -435,7 +447,7 @@ internal class PullRequestActorTests : SubscriptionOrPullRequestActorTests
             ExpectedActorState.Add(PullRequestActorImplementation.PullRequestKey, pr);
         });
             
-        ActionRunner.Setup(r => r.ExecuteAction(It.IsAny<Expression<Func<Task<ActionResult<SynchronizePullRequestResult>>>>>()))
+        ActionRunner.Setup(r => r.ExecuteAction(It.IsAny<SynchronizePullRequestAction>()))
             .ReturnsAsync(checkResult);
 
         if (checkResult == SynchronizePullRequestResult.InProgressCanUpdate)
@@ -453,12 +465,31 @@ internal class PullRequestActorTests : SubscriptionOrPullRequestActorTests
         return Disposable.Create(
             () =>
             {
-                ActionRunner.Verify(r => r.ExecuteAction(It.IsAny<Expression<Func<Task<ActionResult<SynchronizePullRequestResult>>>>>()));
+                ActionRunner.Verify(r => r.ExecuteAction(It.IsAny<SynchronizePullRequestAction>()));
                 if (checkResult == SynchronizePullRequestResult.InProgressCanUpdate)
                 {
                     _darcRemotes[TargetRepo].Verify(r => r.GetPullRequestAsync(InProgressPrUrl));
                 }
             });
+    }
+
+    protected IDisposable WithExistingCodeFlowPullRequest(SynchronizePullRequestResult checkResult)
+    {
+        AfterDbUpdateActions.Add(() =>
+        {
+            var pr = new InProgressPullRequest
+            {
+                Url = InProgressPrUrl,
+            };
+            StateManager.SetStateAsync(PullRequestActorImplementation.PullRequestKey, pr);
+            ExpectedActorState.Add(PullRequestActorImplementation.PullRequestKey, pr);
+        });
+
+        ActionRunner.Setup(r => r.ExecuteAction(It.IsAny<SynchronizePullRequestAction>()))
+            .ReturnsAsync(checkResult);
+
+        return Disposable.Create(
+            () => ActionRunner.Verify(r => r.ExecuteAction(It.IsAny<SynchronizePullRequestAction>())));
     }
 
     protected void WithExistingCodeFlowStatus(Build build)
@@ -613,10 +644,10 @@ internal class PullRequestActorTests : SubscriptionOrPullRequestActorTests
         foreach (var (key, (hasState, hasReminder)) in keys)
         {
             StateManager.Data.ContainsKey(key).Should().Be(hasState,
-                $"{key} state should {(hasState ? string.Empty : "not")} be set");
+                $"{key} state should {(hasState ? string.Empty : "not ")}be set");
 
             Reminders.Data.ContainsKey(key).Should().Be(hasReminder,
-                $"{key} reminder should {(hasReminder ? string.Empty : "not")} be set");
+                $"{key} reminder should {(hasReminder ? string.Empty : "not ")}be set");
         }
     }
 

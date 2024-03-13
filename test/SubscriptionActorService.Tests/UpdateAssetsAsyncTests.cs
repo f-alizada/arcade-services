@@ -263,4 +263,64 @@ internal class UpdateAssetsAsyncTests : PullRequestActorTests
             pullRequestState: true,
             pullRequestCheckReminder: true);
     }
+
+    [Test]
+    public async Task UpdateWithCodeFlowWithPrNotUpdatable()
+    {
+        GivenATestChannel();
+        GivenACodeFlowSubscription(
+            new SubscriptionPolicy
+            {
+                Batchable = false,
+                UpdateFrequency = UpdateFrequency.EveryBuild,
+            });
+        Build build = GivenANewBuild(true);
+
+        GivenAPullRequestCheckReminder();
+        WithExistingCodeFlowStatus(build);
+        WithExistingPrBranch();
+
+        using (WithExistingCodeFlowPullRequest(SynchronizePullRequestResult.InProgressCannotUpdate))
+        {
+            await WhenUpdateAssetsAsyncIsCalled(build);
+
+            AndPcsShouldNotHaveBeenCalled(build);
+            AndShouldHaveCodeFlowState(build, InProgressPrHeadBranch);
+            AndShouldHavePullRequestCheckReminder();
+            AndShouldHaveFollowingState(
+                codeFlowState: true,
+                pullRequestState: true,
+                pullRequestCheckReminder: true);
+        }
+    }
+
+    [Test]
+    public async Task UpdateWithCodeFlowWithPrUpdatableButNoUpdates()
+    {
+        GivenATestChannel();
+        GivenACodeFlowSubscription(
+            new SubscriptionPolicy
+            {
+                Batchable = false,
+                UpdateFrequency = UpdateFrequency.EveryBuild,
+            });
+        Build build = GivenANewBuild(true);
+
+        GivenAPullRequestCheckReminder();
+        WithExistingCodeFlowStatus(build);
+        WithExistingPrBranch();
+
+        using (WithExistingCodeFlowPullRequest(SynchronizePullRequestResult.InProgressCanUpdate))
+        {
+            await WhenUpdateAssetsAsyncIsCalled(build);
+
+            AndPcsShouldNotHaveBeenCalled(build);
+            AndShouldHaveCodeFlowState(build, InProgressPrHeadBranch);
+            AndShouldHavePullRequestCheckReminder();
+            AndShouldHaveFollowingState(
+                codeFlowState: true,
+                pullRequestState: true,
+                pullRequestCheckReminder: true);
+        }
+    }
 }
