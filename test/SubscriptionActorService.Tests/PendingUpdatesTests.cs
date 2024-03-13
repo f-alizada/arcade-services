@@ -13,7 +13,7 @@ using Asset = Maestro.Contracts.Asset;
 namespace SubscriptionActorService.Tests;
 
 [TestFixture, NonParallelizable]
-internal class ProcessPendingUpdatesAsyncTests : PullRequestActorTests
+internal class PendingUpdatesTests : PullRequestActorTests
 {
     private async Task WhenProcessPendingUpdatesAsyncIsCalled()
     {

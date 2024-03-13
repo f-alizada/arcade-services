@@ -9,12 +9,13 @@ using Maestro.Contracts;
 using Maestro.Data.Models;
 using NUnit.Framework;
 using SubscriptionActorService.StateModel;
+
 using Asset = Maestro.Contracts.Asset;
 
 namespace SubscriptionActorService.Tests;
 
 [TestFixture, NonParallelizable]
-internal class UpdateAssetsAsyncTests : PullRequestActorTests
+internal class UpdateAssetsTests : PullRequestActorTests
 {
     private async Task WhenUpdateAssetsAsyncIsCalled(Build forBuild)
     {
@@ -175,152 +176,5 @@ internal class UpdateAssetsAsyncTests : PullRequestActorTests
                     }
             ]);
         AndDependencyFlowEventsShouldBeAdded();
-    }
-
-    [Test]
-    public async Task UpdateWithCodeFlowNoExistingStateOrPrBranch()
-    {
-        GivenATestChannel();
-        GivenACodeFlowSubscription(
-            new SubscriptionPolicy
-            {
-                Batchable = false,
-                UpdateFrequency = UpdateFrequency.EveryBuild,
-            });
-        Build build = GivenANewBuild(true);
-
-        await WhenUpdateAssetsAsyncIsCalled(build);
-
-        ThenShouldHaveCodeFlowReminder();
-        var requestedBranch = AndPcsShouldHaveBeenCalled(build);
-        AndShouldHaveCodeFlowState(build, requestedBranch);
-        AndShouldHavePendingUpdateState(build, isCodeFlow: true);
-        AndShouldHaveFollowingState(
-            codeFlowState: true,
-            codeFlowReminder: true,
-            pullRequestUpdateState: true);
-    }
-
-    [Test]
-    public async Task UpdateWithCodeFlowWaitingForPrBranch()
-    {
-        GivenATestChannel();
-        GivenACodeFlowSubscription(
-            new SubscriptionPolicy
-            {
-                Batchable = false,
-                UpdateFrequency = UpdateFrequency.EveryBuild,
-            });
-        Build build = GivenANewBuild(true);
-
-        GivenAPendingCodeFlowReminder();
-        GivenPendingUpdates(build, true);
-        WithExistingCodeFlowStatus(build);
-        WithoutExistingPrBranch();
-
-        await WhenUpdateAssetsAsyncIsCalled(build);
-
-        ThenShouldHaveCodeFlowReminder();
-        AndPcsShouldNotHaveBeenCalled(build);
-        AndShouldHaveCodeFlowState(build, InProgressPrHeadBranch);
-        AndShouldHavePendingUpdateState(build, isCodeFlow: true);
-        AndShouldHaveFollowingState(
-            codeFlowState: true,
-            codeFlowReminder: true,
-            pullRequestUpdateState: true);
-    }
-
-    [Test]
-    public async Task UpdateWithCodeFlowWithPrBranchReady()
-    {
-        GivenATestChannel();
-        GivenACodeFlowSubscription(
-            new SubscriptionPolicy
-            {
-                Batchable = false,
-                UpdateFrequency = UpdateFrequency.EveryBuild,
-            });
-        Build build = GivenANewBuild(true);
-
-        GivenAPendingCodeFlowReminder();
-        GivenPendingUpdates(build, true);
-        WithExistingCodeFlowStatus(build);
-        WithExistingPrBranch();
-        CreatePullRequestShouldReturnAValidValue();
-
-        await WhenUpdateAssetsAsyncIsCalled(build);
-
-        ThenUpdateReminderIsRemoved();
-        AndPcsShouldNotHaveBeenCalled(build);
-        AndCodeFlowPullRequestShouldHaveBeenCreated();
-        AndShouldHaveCodeFlowState(build, InProgressPrHeadBranch);
-        AndShouldHavePullRequestCheckReminder();
-        AndShouldHaveInProgressCodeFlowPullRequestState(build);
-        AndDependencyFlowEventsShouldBeAdded();
-        AndPendingUpdateIsRemoved();
-        AndShouldHaveFollowingState(
-            codeFlowState: true,
-            pullRequestState: true,
-            pullRequestCheckReminder: true);
-    }
-
-    [Test]
-    public async Task UpdateWithCodeFlowWithPrNotUpdatable()
-    {
-        GivenATestChannel();
-        GivenACodeFlowSubscription(
-            new SubscriptionPolicy
-            {
-                Batchable = false,
-                UpdateFrequency = UpdateFrequency.EveryBuild,
-            });
-        Build build = GivenANewBuild(true);
-
-        GivenAPullRequestCheckReminder();
-        WithExistingCodeFlowStatus(build);
-        WithExistingPrBranch();
-
-        using (WithExistingCodeFlowPullRequest(SynchronizePullRequestResult.InProgressCannotUpdate))
-        {
-            await WhenUpdateAssetsAsyncIsCalled(build);
-
-            AndPcsShouldNotHaveBeenCalled(build);
-            AndShouldHaveCodeFlowState(build, InProgressPrHeadBranch);
-            AndShouldHavePullRequestCheckReminder();
-            AndShouldHaveFollowingState(
-                codeFlowState: true,
-                pullRequestState: true,
-                pullRequestCheckReminder: true);
-        }
-    }
-
-    [Test]
-    public async Task UpdateWithCodeFlowWithPrUpdatableButNoUpdates()
-    {
-        GivenATestChannel();
-        GivenACodeFlowSubscription(
-            new SubscriptionPolicy
-            {
-                Batchable = false,
-                UpdateFrequency = UpdateFrequency.EveryBuild,
-            });
-        Build build = GivenANewBuild(true);
-
-        GivenAPullRequestCheckReminder();
-        WithExistingCodeFlowStatus(build);
-        WithExistingPrBranch();
-
-        using (WithExistingCodeFlowPullRequest(SynchronizePullRequestResult.InProgressCanUpdate))
-        {
-            await WhenUpdateAssetsAsyncIsCalled(build);
-
-            AndPcsShouldNotHaveBeenCalled(build);
-            AndShouldHaveCodeFlowState(build, InProgressPrHeadBranch);
-            AndShouldHavePullRequestCheckReminder();
-            AndShouldHaveFollowingState(
-                codeFlowState: true,
-                pullRequestState: true,
-                pullRequestCheckReminder: true);
-        }
     }
 }

@@ -34,7 +34,7 @@ using SynchronizePullRequestAction = System.Linq.Expressions.Expression<System.F
 namespace SubscriptionActorService.Tests;
 
 [TestFixture]
-internal class PullRequestActorTests : SubscriptionOrPullRequestActorTests
+internal abstract class PullRequestActorTests : SubscriptionOrPullRequestActorTests
 {
     private const long InstallationId = 1174;
     private const string InProgressPrUrl = "https://github.com/owner/repo/pull/10";
