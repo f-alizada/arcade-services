@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
-using System.Security.Policy;
 using System.Threading.Tasks;
 using Maestro.Contracts;
 using Maestro.Data;
@@ -75,14 +74,6 @@ namespace SubscriptionActorService
         /// <summary>
         ///     Creates a new PullRequestActor
         /// </summary>
-        /// <param name="id">
-        ///     The actor id for this actor.
-        ///     If it is a <see cref="Guid" /> actor id, then it is required to be the id of a non-batched subscription in the
-        ///     database
-        ///     If it is a <see cref="string" /> actor id, then it MUST be an actor id created with
-        ///     <see cref="PullRequestActorId.Create(string, string)" /> for use with all subscriptions targeting the specified
-        ///     repository and branch.
-        /// </param>
         public PullRequestActor(
             IMergePolicyEvaluator mergePolicyEvaluator,
             BuildAssetRegistryContext context,
