@@ -7,7 +7,7 @@ using NUnit.Framework;
 namespace SubscriptionActorService.Tests;
 
 [TestFixture, NonParallelizable]
-internal class ProcessCodeFlowReminderAsyncTests : PullRequestActorTests
+internal class PendingCodeFlowUpdatesTests : PullRequestActorTests
 {
     private async Task WhenProcessCodeFlowReminderAsyncIsCalled()
     {
