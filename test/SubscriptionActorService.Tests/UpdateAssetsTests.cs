@@ -114,7 +114,6 @@ internal class UpdateAssetsTests : PullRequestActorTests
         {
             await WhenUpdateAssetsAsyncIsCalled(b);
 
-            ThenShouldHavePullRequestUpdateReminder();
             AndShouldHavePendingUpdateState(b);
         }
     }

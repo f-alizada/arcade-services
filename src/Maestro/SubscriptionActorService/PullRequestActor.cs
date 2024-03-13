@@ -304,7 +304,7 @@ namespace SubscriptionActorService
             // Code flow updates are handled separetely
             if (updates.Any(u => u.IsCodeFlow))
             {
-                return await ProcessCodeFlowUpdatesAsync(updates, pr, canUpdate);
+                return await ProcessCodeFlowUpdatesAsync(updates, pr);
             }
 
             var subscriptionIds = updates.Count > 1
@@ -644,9 +644,18 @@ namespace SubscriptionActorService
                 IsCodeFlow = isCodeFlow,
             };
 
+            // Regardless of code flow or regular PR, if the PR are not complete, postpone the update
+            if (pr != null && !canUpdate)
+            {
+                await _pullRequestUpdateState.StoreItemStateAsync(updateParameter);
+                await _pullRequestUpdateState.SetReminderAsync();
+
+                return ActionResult.Create($"Current Pull request '{pr.Url}' cannot be updated, update queued.");
+            }
+
             if (isCodeFlow)
             {
-                var result = await ProcessCodeFlowUpdatesAsync([updateParameter], pr, canUpdate);
+                var result = await ProcessCodeFlowUpdatesAsync([updateParameter], pr);
                 return ActionResult.Create(result.Message);
             }
 
@@ -655,20 +664,9 @@ namespace SubscriptionActorService
                 if (pr == null)
                 {
                     string? prUrl = await CreatePullRequestAsync([updateParameter]);
-                    if (prUrl == null)
-                    {
-                        return ActionResult.Create("Updates require no changes, no pull request created.");
-                    }
-
-                    return ActionResult.Create($"Pull request '{prUrl}' created.");
-                }
-
-                if (!canUpdate)
-                {
-                    await _pullRequestUpdateState.StoreItemStateAsync(updateParameter);
-                    await _pullRequestUpdateState.SetReminderAsync();
-
-                    return ActionResult.Create($"Current Pull request '{pr.Url}' cannot be updated, update queued.");
+                    return prUrl == null
+                        ? ActionResult.Create("Updates require no changes, no pull request created.")
+                        : ActionResult.Create($"Pull request '{prUrl}' created.");
                 }
 
                 await UpdatePullRequestAsync(pr, [updateParameter]);
@@ -1077,7 +1075,7 @@ namespace SubscriptionActorService
             }
 
             InProgressPullRequest? pr = await _pullRequestState.TryGetStateAsync();
-            return await ProcessCodeFlowUpdatesAsync(updates, pr, true, status);
+            return await ProcessCodeFlowUpdatesAsync(updates, pr, status);
         }
 
         /// <summary>
@@ -1086,7 +1084,6 @@ namespace SubscriptionActorService
         private async Task<ActionResult<bool>> ProcessCodeFlowUpdatesAsync(
             List<UpdateAssetsParameters> updates,
             InProgressPullRequest? pr,
-            bool canUpdate,
             CodeFlowStatus? codeFlowStatus = null)
         {
             // TODO https://github.com/dotnet/arcade-services/issues/3378: Support batched PRs for code flow updates
@@ -1123,6 +1120,9 @@ namespace SubscriptionActorService
                         update.SubscriptionId);
 
                     await _codeFlowState.SetReminderAsync(dueTimeInMinutes: 3);
+                    await _pullRequestUpdateState.StoreItemStateAsync(update);
+                    await _pullRequestUpdateState.SetReminderAsync();
+
                     return ActionResult.Create(true, $"Pending updates applied. Branch {codeFlowStatus.PrBranch} not created yet");
                 }
 
@@ -1142,14 +1142,8 @@ namespace SubscriptionActorService
                 _logger.LogError("Missing code flow data for subscription {subscription}", update.SubscriptionId);
                 await _pullRequestUpdateState.RemoveStateAsync();
                 await _pullRequestUpdateState.UnsetReminderAsync();
+                await _pullRequestCheckState.UnsetReminderAsync();
                 return ActionResult.Create(false, "Missing code flow data.");
-            }
-
-            // Policy checks / builds still running?
-            if (!canUpdate)
-            {
-                _logger.LogInformation("PR {url} for {subscription} cannot be updated at the moment", pr.Url, update.SubscriptionId);
-                return ActionResult.Create(false, "PR cannot be updated");
             }
 
             // Step 4. Update the PR (if needed)
@@ -1179,6 +1173,9 @@ namespace SubscriptionActorService
                 await _codeFlowState.StoreStateAsync(codeFlowStatus);
                 await _pullRequestState.StoreStateAsync(pr);
                 await _pullRequestCheckState.SetReminderAsync();
+
+                await _pullRequestUpdateState.RemoveStateAsync();
+                await _pullRequestUpdateState.UnsetReminderAsync();
             }
             catch (Exception e)
             {
@@ -1224,7 +1221,6 @@ namespace SubscriptionActorService
 
             await _codeFlowState.StoreStateAsync(codeFlowUpdate);
             await _codeFlowState.SetReminderAsync(dueTimeInMinutes: 3);
-            await _pullRequestUpdateState.StoreItemStateAsync(update);
 
             return ActionResult.Create(true, $"Pending updates applied. Branch {codeFlowUpdate.PrBranch} requested from PCS");
         }

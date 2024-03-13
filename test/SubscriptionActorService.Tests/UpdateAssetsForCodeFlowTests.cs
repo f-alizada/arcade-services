@@ -11,6 +11,11 @@ using Asset = Maestro.Contracts.Asset;
 
 namespace SubscriptionActorService.Tests;
 
+/*
+ * TODO: Try removing code flow state / reminders and adding the data to existing state
+ *       Fix when there should be an update and when we get the update from the method call directly
+ */
+
 /// <summary>
 /// Tests the code flow PR update logic.
 /// The tests are writter in the order in which the different phases of the PR are written.
@@ -59,11 +64,9 @@ internal class UpdateAssetsForCodeFlowTests : PullRequestActorTests
         ThenShouldHaveCodeFlowReminder();
         var requestedBranch = AndPcsShouldHaveBeenCalled(build);
         AndShouldHaveCodeFlowState(build, requestedBranch);
-        AndShouldHavePendingUpdateState(build, isCodeFlow: true);
         AndShouldHaveFollowingState(
             codeFlowState: true,
-            codeFlowReminder: true,
-            pullRequestUpdateState: true);
+            codeFlowReminder: true);
     }
 
     [Test]
@@ -139,7 +142,6 @@ internal class UpdateAssetsForCodeFlowTests : PullRequestActorTests
             });
         Build build = GivenANewBuild(true);
 
-        GivenAPullRequestCheckReminder();
         WithExistingCodeFlowStatus(build);
         WithExistingPrBranch();
 
@@ -148,11 +150,12 @@ internal class UpdateAssetsForCodeFlowTests : PullRequestActorTests
             await WhenUpdateAssetsAsyncIsCalled(build);
 
             AndShouldHaveCodeFlowState(build, InProgressPrHeadBranch);
-            AndShouldHavePullRequestCheckReminder();
+            AndShouldHavePendingUpdateState(build, isCodeFlow: true);
             AndShouldHaveFollowingState(
                 codeFlowState: true,
                 pullRequestState: true,
-                pullRequestCheckReminder: true);
+                pullRequestUpdateState: true,
+                pullRequestUpdateReminder: true);
         }
     }
 

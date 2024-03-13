@@ -517,17 +517,6 @@ internal abstract class PullRequestActorTests : SubscriptionOrPullRequestActorTe
                 TimeSpan.FromMinutes(5)));
     }
 
-    protected void ThenShouldHavePullRequestUpdateReminder()
-    {
-        ExpectedReminders.Add(
-            PullRequestActorImplementation.PullRequestUpdateKey,
-            new MockReminderManager.Reminder(
-                PullRequestActorImplementation.PullRequestUpdateKey,
-                [],
-                TimeSpan.FromMinutes(5),
-                TimeSpan.FromMinutes(5)));
-    }
-
     protected void ThenShouldHaveCodeFlowReminder()
     {
         ExpectedReminders.Add(
@@ -622,6 +611,14 @@ internal abstract class PullRequestActorTests : SubscriptionOrPullRequestActorTe
                     IsCodeFlow = isCodeFlow,
                 }
             });
+
+        ExpectedReminders.Add(
+            PullRequestActorImplementation.PullRequestUpdateKey,
+            new MockReminderManager.Reminder(
+                PullRequestActorImplementation.PullRequestUpdateKey,
+                [],
+                TimeSpan.FromMinutes(5),
+                TimeSpan.FromMinutes(5)));
     }
 
     protected void AndShouldHaveFollowingState(
