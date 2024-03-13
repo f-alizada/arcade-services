@@ -125,6 +125,30 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
         Reminders.Data[PullRequestActorImplementation.CodeFlowKey] = reminder;
     }
 
+    private void GivenPendingUpdates(Build forBuild, bool isCodeFlow)
+    {
+        AfterDbUpdateActions.Add(
+            () =>
+            {
+                var updates = new List<UpdateAssetsParameters>
+                {
+                        new()
+                        {
+                            SubscriptionId = Subscription.Id,
+                            BuildId = forBuild.Id,
+                            SourceRepo = forBuild.GitHubRepository ?? forBuild.AzureDevOpsRepository,
+                            SourceSha = forBuild.Commit,
+                            Assets = forBuild.Assets
+                                .Select(a => new Asset {Name = a.Name, Version = a.Version})
+                                .ToList(),
+                            IsCoherencyUpdate = false,
+                            IsCodeFlow = isCodeFlow,
+                        }
+                };
+                StateManager.Data[PullRequestActorImplementation.PullRequestUpdateKey] = updates;
+            });
+    }
+
     private void ThenGetRequiredUpdatesShouldHaveBeenCalled(Build withBuild)
     {
         var assets = new List<IEnumerable<AssetData>>();
@@ -448,28 +472,6 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
             });
     }
 
-    // TODO
-    //private IDisposable WithMockedPullRequestBuilder()
-    //{
-    //    _prBuilder
-    //        .Setup(x => x.GenerateCodeFlowPullRequestTitleAsync(It.IsAny<UpdateAssetsParameters>(), TargetBranch))
-    //        .ReturnsAsync(PrTitle);
-
-    //    _prBuilder
-    //        .Setup(x => x.GenerateCodeFlowPullRequestDescriptionAsync(It.IsAny<UpdateAssetsParameters>(), TargetBranch))
-    //        .ReturnsAsync(PrDescription);
-
-    //    return Disposable.Create(
-    //        () =>
-    //        {
-    //            ActionRunner.Verify(r => r.ExecuteAction(It.IsAny<Expression<Func<Task<ActionResult<SynchronizePullRequestResult>>>>>()));
-    //            if (checkResult == SynchronizePullRequestResult.InProgressCanUpdate)
-    //            {
-    //                _darcRemotes[TargetRepo].Verify(r => r.GetPullRequestAsync(InProgressPrUrl));
-    //            }
-    //        });
-    //}
-
     private void WithExistingCodeFlowStatus(Build build)
     {
         AfterDbUpdateActions.Add(() =>
@@ -601,6 +603,34 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
             });
     }
 
+    private void AndShouldHaveFollowingState(
+        bool pullRequestUpdateState = false,
+        bool pullRequestUpdateReminder = false,
+        bool pullRequestState = false,
+        bool pullRequestReminder = false,
+        bool pullRequestCheckState = false,
+        bool pullRequestCheckReminder = false,
+        bool codeFlowState = false,
+        bool codeFlowReminder = false)
+    {
+        Dictionary<string, (bool HasState, bool HasReminder)> keys = new()
+        {
+            { PullRequestActorImplementation.PullRequestUpdateKey, (pullRequestUpdateState, pullRequestUpdateReminder) },
+            { PullRequestActorImplementation.PullRequestCheckKey, (pullRequestCheckState, pullRequestCheckReminder) },
+            { PullRequestActorImplementation.PullRequestKey, (pullRequestState, pullRequestReminder) },
+            { PullRequestActorImplementation.CodeFlowKey, (codeFlowState, codeFlowReminder) },
+        };
+
+        foreach (var (key, (hasState, hasReminder)) in keys)
+        {
+            StateManager.Data.ContainsKey(key).Should().Be(hasState,
+                $"{key} state should {(hasState ? string.Empty : "not")} be set");
+
+            Reminders.Data.ContainsKey(key).Should().Be(hasReminder,
+                $"{key} reminder should {(hasReminder ? string.Empty : "not")} be set");
+        }
+    }
+
     private void AndPendingUpdateIsRemoved()
     {
         ExpectedActorState.Remove(PullRequestActorImplementation.PullRequestUpdateKey);
@@ -609,11 +639,6 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
     private void ThenUpdateReminderIsRemoved()
     {
         ExpectedReminders.Remove(PullRequestActorImplementation.PullRequestUpdateKey);
-    }
-
-    private void ThenCodeFlowReminderIsRemoved()
-    {
-        ExpectedReminders.Remove(PullRequestActorImplementation.CodeFlowKey);
     }
 
     private PullRequestActor CreateActor(IServiceProvider context)
@@ -937,6 +962,10 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
             var requestedBranch = AndPcsShouldHaveBeenCalled(build);
             AndShouldHaveCodeFlowState(build, requestedBranch);
             AndShouldHavePendingUpdateState(build, isCodeFlow: true);
+            AndShouldHaveFollowingState(
+                codeFlowState: true,
+                codeFlowReminder: true,
+                pullRequestUpdateState: true);
         }
 
         [Test]
@@ -951,8 +980,9 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
                 });
             Build build = GivenANewBuild(true);
 
-            WithExistingCodeFlowStatus(build);
             GivenAPendingCodeFlowReminder();
+            GivenPendingUpdates(build, true);
+            WithExistingCodeFlowStatus(build);
             WithoutExistingPrBranch();
 
             await WhenUpdateAssetsAsyncIsCalled(build);
@@ -960,6 +990,11 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
             ThenShouldHaveCodeFlowReminder();
             AndPcsShouldNotHaveBeenCalled(build);
             AndShouldHaveCodeFlowState(build, InProgressPrHeadBranch);
+            AndShouldHavePendingUpdateState(build, isCodeFlow: true);
+            AndShouldHaveFollowingState(
+                codeFlowState: true,
+                codeFlowReminder: true,
+                pullRequestUpdateState: true);
         }
 
         [Test]
@@ -974,14 +1009,14 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
                 });
             Build build = GivenANewBuild(true);
 
-            WithExistingCodeFlowStatus(build);
             GivenAPendingCodeFlowReminder();
+            GivenPendingUpdates(build, true);
+            WithExistingCodeFlowStatus(build);
             WithExistingPrBranch();
             CreatePullRequestShouldReturnAValidValue();
 
             await WhenUpdateAssetsAsyncIsCalled(build);
 
-            ThenCodeFlowReminderIsRemoved();
             ThenUpdateReminderIsRemoved();
             AndPcsShouldNotHaveBeenCalled(build);
             AndCodeFlowPullRequestShouldHaveBeenCreated();
@@ -990,6 +1025,10 @@ public class PullRequestActorTests : SubscriptionOrPullRequestActorTests
             AndShouldHaveInProgressCodeFlowPullRequestState(build);
             AndDependencyFlowEventsShouldBeAdded();
             AndPendingUpdateIsRemoved();
+            AndShouldHaveFollowingState(
+                codeFlowState: true,
+                pullRequestState: true,
+                pullRequestCheckReminder: true);
         }
     }
 
