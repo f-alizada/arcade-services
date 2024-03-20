@@ -32,7 +32,6 @@ using SynchronizePullRequestAction = System.Linq.Expressions.Expression<System.F
 
 namespace SubscriptionActorService.Tests;
 
-[TestFixture]
 internal abstract class PullRequestActorTests : SubscriptionOrPullRequestActorTests
 {
     private const long InstallationId = 1174;

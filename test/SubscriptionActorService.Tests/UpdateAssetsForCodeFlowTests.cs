@@ -18,67 +18,8 @@ namespace SubscriptionActorService.Tests;
 /// Each test should have the inner state that is left behind by the previous state.
 /// </summary>
 [TestFixture, NonParallelizable]
-internal class UpdateAssetsForCodeFlowTests : PullRequestActorTests
+internal class UpdateAssetsForCodeFlowTests : UpdateAssetsPullRequestActorTests
 {
-    private async Task WhenUpdateAssetsAsyncIsCalled(Build forBuild)
-    {
-        await Execute(
-            async context =>
-            {
-                PullRequestActor actor = CreateActor(context);
-                await actor.Implementation!.UpdateAssetsAsync(
-                    Subscription.Id,
-                    forBuild.Id,
-                    SourceRepo,
-                    forBuild.Commit,
-                    forBuild.Assets.Select(
-                        a => new Asset
-                        {
-                            Name = a.Name,
-                            Version = a.Version
-                        })
-                    .ToList(),
-                    Subscription.SourceEnabled);
-            });
-    }
-
-    protected override void ThenShouldHavePendingUpdateState(Build forBuild, bool _ = false)
-    {
-        base.ThenShouldHavePendingUpdateState(forBuild, true);
-    }
-
-    protected void GivenPendingUpdates(Build forBuild)
-    {
-        AfterDbUpdateActions.Add(
-            () =>
-            {
-                var updates = new List<UpdateAssetsParameters>
-                {
-                    new()
-                    {
-                        SubscriptionId = Subscription.Id,
-                        BuildId = forBuild.Id,
-                        SourceRepo = forBuild.GitHubRepository ?? forBuild.AzureDevOpsRepository,
-                        SourceSha = forBuild.Commit,
-                        Assets = forBuild.Assets
-                            .Select(a => new Asset {Name = a.Name, Version = a.Version})
-                            .ToList(),
-                        IsCoherencyUpdate = false,
-                        IsCodeFlow = true,
-                    }
-                };
-
-                var reminder = new MockReminderManager.Reminder(
-                    PullRequestActorImplementation.PullRequestUpdateKey,
-                    null,
-                    TimeSpan.FromMinutes(3),
-                    TimeSpan.FromMinutes(3));
-
-                StateManager.Data[PullRequestActorImplementation.PullRequestUpdateKey] = updates;
-                Reminders.Data[PullRequestActorImplementation.PullRequestUpdateKey] = reminder;
-            });
-    }
-
     [Test]
     public async Task UpdateWithNoExistingStateOrPrBranch()
     {
@@ -255,5 +196,42 @@ internal class UpdateAssetsForCodeFlowTests : PullRequestActorTests
                 pullRequestState: true,
                 pullRequestCheckReminder: true);
         }
+    }
+
+    protected override void ThenShouldHavePendingUpdateState(Build forBuild, bool _ = false)
+    {
+        base.ThenShouldHavePendingUpdateState(forBuild, true);
+    }
+
+    protected void GivenPendingUpdates(Build forBuild)
+    {
+        AfterDbUpdateActions.Add(
+            () =>
+            {
+                var updates = new List<UpdateAssetsParameters>
+                {
+                    new()
+                    {
+                        SubscriptionId = Subscription.Id,
+                        BuildId = forBuild.Id,
+                        SourceRepo = forBuild.GitHubRepository ?? forBuild.AzureDevOpsRepository,
+                        SourceSha = forBuild.Commit,
+                        Assets = forBuild.Assets
+                            .Select(a => new Asset {Name = a.Name, Version = a.Version})
+                            .ToList(),
+                        IsCoherencyUpdate = false,
+                        IsCodeFlow = true,
+                    }
+                };
+
+                var reminder = new MockReminderManager.Reminder(
+                    PullRequestActorImplementation.PullRequestUpdateKey,
+                    null,
+                    TimeSpan.FromMinutes(3),
+                    TimeSpan.FromMinutes(3));
+
+                StateManager.Data[PullRequestActorImplementation.PullRequestUpdateKey] = updates;
+                Reminders.Data[PullRequestActorImplementation.PullRequestUpdateKey] = reminder;
+            });
     }
 }
