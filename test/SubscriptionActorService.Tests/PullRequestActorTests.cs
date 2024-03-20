@@ -223,6 +223,20 @@ internal abstract class PullRequestActorTests : SubscriptionOrPullRequestActorTe
                     .Excluding(pr => pr.Description));
     }
 
+    protected void ThenPcsShouldNotHaveBeenCalled(Build build, string? prUrl = null)
+    {
+        var pcsRequests = new List<CodeFlowRequest>();
+        _pcsClientCodeFlow
+            .Verify(
+                r => r.FlowAsync(
+                    It.Is<CodeFlowRequest>(request => request.BuildId == build.Id && (prUrl == null || request.PrUrl == prUrl)),
+                    It.IsAny<CancellationToken>()),
+                Times.Never);
+    }
+
+    protected void ThenPcsShouldHaveBeenCalled(Build build, string? prUrl, out string prBranch)
+        => AndPcsShouldHaveBeenCalled(build, prUrl, out prBranch);
+
     protected void AndPcsShouldHaveBeenCalled(Build build, string? prUrl, out string prBranch)
     {
         var pcsRequests = new List<CodeFlowRequest>();

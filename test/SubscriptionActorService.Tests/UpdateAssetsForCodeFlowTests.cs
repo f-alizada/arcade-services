@@ -150,6 +150,7 @@ internal class UpdateAssetsForCodeFlowTests : PullRequestActorTests
         await WhenUpdateAssetsAsyncIsCalled(build);
 
         ThenUpdateReminderIsRemoved();
+        ThenPcsShouldNotHaveBeenCalled(build);
         AndCodeFlowPullRequestShouldHaveBeenCreated();
         AndShouldHaveCodeFlowState(build, InProgressPrHeadBranch);
         AndShouldHavePullRequestCheckReminder();
@@ -181,8 +182,9 @@ internal class UpdateAssetsForCodeFlowTests : PullRequestActorTests
         {
             await WhenUpdateAssetsAsyncIsCalled(build);
 
-            AndShouldHaveCodeFlowState(build, InProgressPrHeadBranch);
             ThenShouldHavePendingUpdateState(build);
+            ThenPcsShouldNotHaveBeenCalled(build, InProgressPrUrl);
+            AndShouldHaveCodeFlowState(build, InProgressPrHeadBranch);
             AndShouldHaveFollowingState(
                 codeFlowState: true,
                 pullRequestState: true,
@@ -211,6 +213,7 @@ internal class UpdateAssetsForCodeFlowTests : PullRequestActorTests
         {
             await WhenUpdateAssetsAsyncIsCalled(build);
 
+            ThenPcsShouldNotHaveBeenCalled(build, InProgressPrUrl);
             AndShouldHaveCodeFlowState(build, InProgressPrHeadBranch);
             AndShouldHavePullRequestCheckReminder();
             AndShouldHaveFollowingState(
@@ -244,7 +247,7 @@ internal class UpdateAssetsForCodeFlowTests : PullRequestActorTests
         {
             await WhenUpdateAssetsAsyncIsCalled(newBuild);
 
-            AndPcsShouldHaveBeenCalled(newBuild, InProgressPrUrl, out _);
+            ThenPcsShouldHaveBeenCalled(newBuild, InProgressPrUrl, out _);
             AndShouldHaveCodeFlowState(newBuild, InProgressPrHeadBranch);
             AndShouldHavePullRequestCheckReminder();
             AndShouldHaveFollowingState(
