@@ -86,22 +86,6 @@ internal class PullRequestBuilder : IPullRequestBuilder
         _logger = logger;
     }
 
-    public Task<string> GenerateCodeFlowPullRequestTitleAsync(
-        UpdateAssetsParameters update,
-        string targetBranch)
-    {
-        // TODO
-        return Task.FromResult("PR Title");
-    }
-
-    public Task<string> GenerateCodeFlowPullRequestDescriptionAsync(
-        UpdateAssetsParameters update,
-        string targetBranch)
-    {
-        // TODO
-        return Task.FromResult("PR Description");
-    }
-
     public async Task<string> GeneratePullRequestTitleAsync(InProgressPullRequest inProgressPr, string targetBranch)
     {
         // Get the unique subscription IDs. It may be possible for a coherency update
@@ -117,43 +101,7 @@ internal class PullRequestBuilder : IPullRequestBuilder
             return $"[{targetBranch}] Update dependencies to ensure coherency";
         }
 
-        // We'll either list out the repos involved (in a shortened form)
-        // or we'll list out the number of repos that are involved.
-        string baseTitle = $"[{targetBranch}] Update dependencies from";
-
-        // Github title limit - 348 
-        // Azdo title limit - 419 
-        // maxTitleLength = 150 to fit 2/3 repo names in the title
-        const int maxTitleLength = 150;
-        var maxRepoListLength = maxTitleLength - baseTitle.Length;
-        const string delimiter = ", ";
-
-        var repoNames = new List<string>();
-        int titleLength = 0;
-        foreach (Guid subscriptionId in uniqueSubscriptionIds)
-        {
-            string? repoName = await GetSourceRepositoryAsync(subscriptionId);
-            if (repoName == null)
-            {
-                continue;
-            }
-
-            // Strip down repo name.
-            repoName = repoName
-                .Replace("https://github.com/", null)
-                .Replace("https://dev.azure.com/", null)
-                .Replace("_git/", null);
-
-            repoNames.Add(repoName);
-
-            titleLength += repoName.Length + delimiter.Length;
-            if (titleLength > maxRepoListLength)
-            {
-                return $"{baseTitle} {uniqueSubscriptionIds.Length} repositories";
-            }
-        }
-
-        return $"{baseTitle} {string.Join(delimiter, repoNames.OrderBy(s => s))}";
+        return await CreateTitleWithRepositories($"[{targetBranch}] Update dependencies from", uniqueSubscriptionIds);
     }
 
     public async Task<string> CalculatePRDescriptionAndCommitUpdatesAsync(
@@ -246,6 +194,21 @@ internal class PullRequestBuilder : IPullRequestBuilder
         }
 
         return description.ToString();
+    }
+
+    public async Task<string> GenerateCodeFlowPullRequestTitleAsync(
+        UpdateAssetsParameters update,
+        string targetBranch)
+    {
+        return await CreateTitleWithRepositories($"[{targetBranch}] Code updates from ", [update.SubscriptionId]);
+    }
+
+    public Task<string> GenerateCodeFlowPullRequestDescriptionAsync(
+        UpdateAssetsParameters update,
+        string targetBranch)
+    {
+        // TODO
+        return Task.FromResult("PR Description");
     }
 
     /// <summary>
@@ -496,5 +459,47 @@ internal class PullRequestBuilder : IPullRequestBuilder
         }
 
         return new StringBuilder(description);
+    }
+
+    /// <summary>
+    /// Either inserts a full list of the repos involved (in a shortened form)
+    /// or just the number of repos that are involved if title is too long.
+    /// </summary>
+    /// <param name="baseTitle">Start of the title to append the list to</param>
+    private async Task<string> CreateTitleWithRepositories(string baseTitle, Guid[] subscriptionIds)
+    {
+        // Github title limit - 348 
+        // Azdo title limit - 419 
+        // maxTitleLength = 150 to fit 2/3 repo names in the title
+        const int maxTitleLength = 150;
+        var maxRepoListLength = maxTitleLength - baseTitle.Length;
+        const string delimiter = ", ";
+
+        var repoNames = new List<string>();
+        int titleLength = 0;
+        foreach (Guid subscriptionId in subscriptionIds)
+        {
+            string? repoName = await GetSourceRepositoryAsync(subscriptionId);
+            if (repoName == null)
+            {
+                continue;
+            }
+
+            // Strip down repo name.
+            repoName = repoName
+                .Replace("https://github.com/", null)
+                .Replace("https://dev.azure.com/", null)
+                .Replace("_git/", null);
+
+            repoNames.Add(repoName);
+
+            titleLength += repoName.Length + delimiter.Length;
+            if (titleLength > maxRepoListLength)
+            {
+                return $"{baseTitle} {subscriptionIds.Length} repositories";
+            }
+        }
+
+        return $"{baseTitle} {string.Join(delimiter, repoNames.OrderBy(s => s))}";
     }
 }
