@@ -4,6 +4,7 @@
 using System;
 using System.Threading.Tasks;
 using Microsoft.DotNet.ServiceFabric.ServiceHost.Actors;
+using Microsoft.Extensions.Logging;
 using Microsoft.ServiceFabric.Actors.Runtime;
 
 #nullable enable
@@ -21,8 +22,9 @@ internal class ActorStateAndReminderManager<T>
     public ActorStateAndReminderManager(
             IActorStateManager stateManager,
             IReminderManager reminderManager,
+            ILogger logger,
             string key)
-        : base(stateManager, key)
+        : base(stateManager, logger, key)
     {
         _reminderManager = reminderManager;
         _key = key;

@@ -4,6 +4,7 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.DotNet.ServiceFabric.ServiceHost.Actors;
+using Microsoft.Extensions.Logging;
 using Microsoft.ServiceFabric.Actors.Runtime;
 
 #nullable enable
@@ -18,8 +19,8 @@ internal class ActorCollectionStateManager<T> : ActorStateAndReminderManager<Lis
     private readonly IActorStateManager _stateManager;
     private readonly string _key;
 
-    public ActorCollectionStateManager(IActorStateManager stateManager, IReminderManager reminderManager, string key)
-        : base(stateManager, reminderManager, key)
+    public ActorCollectionStateManager(IActorStateManager stateManager, IReminderManager reminderManager, ILogger logger, string key)
+        : base(stateManager, reminderManager, logger, key)
     {
         _stateManager = stateManager;
         _key = key;
