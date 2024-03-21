@@ -21,7 +21,7 @@ internal abstract class UpdateAssetsPullRequestActorTests : PullRequestActorTest
                     Subscription.Id,
                     forBuild.Id,
                     SourceRepo,
-                    NewCommit,
+                    forBuild.Commit,
                     forBuild.Assets.Select(
                             a => new Asset
                             {

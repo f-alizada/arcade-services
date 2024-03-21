@@ -15,7 +15,7 @@ namespace SubscriptionActorService.StateModel;
 /// </summary>
 internal class ActorStateManager<T> where T : class
 {
-    protected const int DefaultDueTimeInMinutes = 5;
+    public const int DefaultDueTimeInMinutes = 5;
 
     private readonly IActorStateManager _stateManager;
     private readonly ILogger _logger;

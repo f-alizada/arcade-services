@@ -42,7 +42,7 @@ internal abstract class PendingUpdatePullRequestActorTests : PullRequestActorTes
         ExpectedActorState[PullRequestActorImplementation.PullRequestUpdateKey] = updates;
     }
 
-    protected void AndPendingUpdates(Build forBuild)
+    protected void AndPendingUpdates(Build forBuild, bool isCodeFlow = false)
     {
         AfterDbUpdateActions.Add(
             () =>
@@ -58,7 +58,8 @@ internal abstract class PendingUpdatePullRequestActorTests : PullRequestActorTes
                             Assets = forBuild.Assets
                                 .Select(a => new Asset {Name = a.Name, Version = a.Version})
                                 .ToList(),
-                            IsCoherencyUpdate = false
+                            IsCoherencyUpdate = false,
+                            IsCodeFlow = isCodeFlow,
                         }
                 };
                 StateManager.Data[PullRequestActorImplementation.PullRequestUpdateKey] = updates;

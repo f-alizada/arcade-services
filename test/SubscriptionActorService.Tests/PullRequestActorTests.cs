@@ -556,6 +556,12 @@ internal abstract class PullRequestActorTests : SubscriptionOrPullRequestActorTe
             });
     }
 
+    protected void AndShouldHaveNoPendingUpdateState()
+    {
+        ExpectedActorState.Remove(PullRequestActorImplementation.PullRequestUpdateKey);
+        ExpectedReminders.Remove(PullRequestActorImplementation.PullRequestUpdateKey);
+    }
+
     protected virtual void ThenShouldHavePendingUpdateState(Build forBuild, bool isCodeFlow = false)
     {
         ExpectedActorState.Add(
@@ -593,14 +599,13 @@ internal abstract class PullRequestActorTests : SubscriptionOrPullRequestActorTe
         bool pullRequestUpdateState = false,
         bool pullRequestUpdateReminder = false,
         bool pullRequestState = false,
-        bool pullRequestCheckState = false,
         bool pullRequestCheckReminder = false,
         bool codeFlowState = false)
     {
         Dictionary<string, (bool HasState, bool HasReminder)> keys = new()
         {
             { PullRequestActorImplementation.PullRequestUpdateKey, (pullRequestUpdateState, pullRequestUpdateReminder) },
-            { PullRequestActorImplementation.PullRequestCheckKey, (pullRequestCheckState, pullRequestCheckReminder) },
+            { PullRequestActorImplementation.PullRequestCheckKey, (false /* no pr check state allowed */, pullRequestCheckReminder) },
             { PullRequestActorImplementation.PullRequestKey, (pullRequestState, false /* no codeflow reminders allowed */) },
             { PullRequestActorImplementation.CodeFlowKey, (codeFlowState, false /* no codeflow reminders allowed */) },
         };

@@ -196,7 +196,7 @@ namespace SubscriptionActorService
         private readonly ICoherencyUpdateResolver _coherencyUpdateResolver;
 
         protected readonly ActorCollectionStateManager<UpdateAssetsParameters> _pullRequestUpdateState;
-        protected readonly ActorStateAndReminderManager<UpdateAssetsParameters> _pullRequestCheckState;
+        protected readonly ActorReminderManager<UpdateAssetsParameters> _pullRequestCheckState;
         protected readonly ActorStateManager<InProgressPullRequest> _pullRequestState;
         protected readonly ActorStateManager<CodeFlowStatus> _codeFlowState;
 
@@ -224,7 +224,7 @@ namespace SubscriptionActorService
             _logger = loggerFactory.CreateLogger(GetType());
 
             _pullRequestUpdateState = new(stateManager, reminders, _logger, PullRequestUpdateKey);
-            _pullRequestCheckState = new(stateManager, reminders, _logger, PullRequestCheckKey);
+            _pullRequestCheckState = new(reminders, PullRequestCheckKey);
             _pullRequestState = new(stateManager, _logger, PullRequestKey);
             _codeFlowState = new(stateManager, _logger, CodeFlowKey);
         }
