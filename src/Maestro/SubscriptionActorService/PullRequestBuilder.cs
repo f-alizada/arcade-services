@@ -40,23 +40,22 @@ internal interface IPullRequestBuilder
     /// </summary>
     /// <param name="inProgressPr">Current in progress pull request information</param>
     /// <returns>Pull request title</returns>
-    Task<string> GeneratePullRequestTitleAsync(
+    Task<string> GeneratePRTitleAsync(
         InProgressPullRequest inProgressPr,
         string targetBranch);
 
     /// <summary>
     ///    Generate the title for a code flow PR.
     /// </summary>
-    Task<string> GenerateCodeFlowPullRequestTitleAsync(
+    Task<string> GenerateCodeFlowPRTitleAsync(
         UpdateAssetsParameters update,
         string targetBranch);
 
     /// <summary>
     ///    Generate the description for a code flow PR.
     /// </summary>
-    Task<string> GenerateCodeFlowPullRequestDescriptionAsync(
-        UpdateAssetsParameters update,
-        string targetBranch);
+    Task<string> GenerateCodeFlowPRDescriptionAsync(
+        UpdateAssetsParameters update);
 }
 
 internal class PullRequestBuilder : IPullRequestBuilder
@@ -72,8 +71,6 @@ internal class PullRequestBuilder : IPullRequestBuilder
     private readonly IBasicBarClient _barClient;
     private readonly ILogger<PullRequestBuilder> _logger;
 
-    /// <param name="description">An empty or null string in case of a new PR, or an existing PR description in case of an update
-    /// in case of a PR that is to be updated</param>
     public PullRequestBuilder(
         BuildAssetRegistryContext context,
         IRemoteFactory remoteFactory,
@@ -86,7 +83,7 @@ internal class PullRequestBuilder : IPullRequestBuilder
         _logger = logger;
     }
 
-    public async Task<string> GeneratePullRequestTitleAsync(InProgressPullRequest inProgressPr, string targetBranch)
+    public async Task<string> GeneratePRTitleAsync(InProgressPullRequest inProgressPr, string targetBranch)
     {
         // Get the unique subscription IDs. It may be possible for a coherency update
         // to not have any contained subscription.  In this case
@@ -110,7 +107,9 @@ internal class PullRequestBuilder : IPullRequestBuilder
         string targetRepository,
         string newBranchName)
     {
-        StringBuilder description = GetDescriptionStringBuilder("This pull request updates the following dependencies");
+        StringBuilder description = new StringBuilder(currentDescription ?? "This pull request updates the following dependencies")
+            .AppendLine()
+            .AppendLine();
         int startingReferenceId = GetStartingReferenceId(description.ToString());
 
         // First run through non-coherency and then do a coherency
@@ -196,16 +195,14 @@ internal class PullRequestBuilder : IPullRequestBuilder
         return description.ToString();
     }
 
-    public async Task<string> GenerateCodeFlowPullRequestTitleAsync(
+    public async Task<string> GenerateCodeFlowPRTitleAsync(
         UpdateAssetsParameters update,
         string targetBranch)
     {
         return await CreateTitleWithRepositories($"[{targetBranch}] Source code changes from ", [update.SubscriptionId]);
     }
 
-    public async Task<string> GenerateCodeFlowPullRequestDescriptionAsync(
-        UpdateAssetsParameters update,
-        string targetBranch)
+    public async Task<string> GenerateCodeFlowPRDescriptionAsync(UpdateAssetsParameters update)
     {
         var build = await _barClient.GetBuildAsync(update.BuildId)
             ?? throw new Exception($"Failed to find build {update.BuildId} for subscription {update.SubscriptionId}");
@@ -216,11 +213,11 @@ internal class PullRequestBuilder : IPullRequestBuilder
 
             This pull request is bringing source changes from **{update.SourceRepo}**.
             
-            "- **Subscription**: {update.SubscriptionId}
-            "- **Build**: {build.AzureDevOpsBuildNumber}
-            "- **Date Produced**: {build.DateProduced.ToUniversalTime():MMMM d, yyyy h:mm:ss tt UTC}
-            "- **Commit**: {build.Commit}
-            "- **Branch**: {build.GetBranch()}
+            - **Subscription**: {update.SubscriptionId}
+            - **Build**: {build.AzureDevOpsBuildNumber}
+            - **Date Produced**: {build.DateProduced.ToUniversalTime():MMMM d, yyyy h:mm:ss tt UTC}
+            - **Commit**: {build.Commit}
+            - **Branch**: {build.GetBranch()}
 
             {GetEndMarker(update.SubscriptionId)}
             """;
@@ -465,9 +462,6 @@ internal class PullRequestBuilder : IPullRequestBuilder
         Subscription? subscription = await _context.Subscriptions.FindAsync(subscriptionId);
         return subscription?.SourceRepository;
     }
-
-    private static StringBuilder GetDescriptionStringBuilder(string description)
-        => new StringBuilder(description).AppendLine().AppendLine();
 
     /// <summary>
     /// Either inserts a full list of the repos involved (in a shortened form)

@@ -759,7 +759,7 @@ namespace SubscriptionActorService
                     targetRepository,
                     new PullRequest
                     {
-                        Title = await _pullRequestBuilder.GeneratePullRequestTitleAsync(inProgressPr, targetBranch),
+                        Title = await _pullRequestBuilder.GeneratePRTitleAsync(inProgressPr, targetBranch),
                         Description = description,
                         BaseBranch = targetBranch,
                         HeadBranch = newBranchName,
@@ -873,7 +873,7 @@ namespace SubscriptionActorService
                 targetRepository,
                 headBranch);
 
-            pullRequest.Title = await _pullRequestBuilder.GeneratePullRequestTitleAsync(pr, targetBranch);
+            pullRequest.Title = await _pullRequestBuilder.GeneratePRTitleAsync(pr, targetBranch);
 
             await darcRemote.UpdatePullRequestAsync(pr.Url, pullRequest);
             await _pullRequestState.StoreStateAsync(pr);
@@ -1231,8 +1231,8 @@ namespace SubscriptionActorService
 
             try
             {
-                string title = await _pullRequestBuilder.GenerateCodeFlowPullRequestTitleAsync(update, targetBranch);
-                string description = await _pullRequestBuilder.GenerateCodeFlowPullRequestDescriptionAsync(update, targetBranch);
+                string title = await _pullRequestBuilder.GenerateCodeFlowPRTitleAsync(update, targetBranch);
+                string description = await _pullRequestBuilder.GenerateCodeFlowPRDescriptionAsync(update);
 
                 string prUrl = await darcRemote.CreatePullRequestAsync(
                     targetRepository,
