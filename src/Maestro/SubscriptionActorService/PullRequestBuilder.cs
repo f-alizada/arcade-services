@@ -11,7 +11,6 @@ using Maestro.Data;
 using Maestro.Data.Models;
 using Microsoft.DotNet.DarcLib;
 using Microsoft.Extensions.Logging;
-using Microsoft.TeamFoundation.Build.WebApi;
 using SubscriptionActorService.StateModel;
 
 #nullable enable
