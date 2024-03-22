@@ -212,15 +212,17 @@ internal class PullRequestBuilder : IPullRequestBuilder
         var build = await _barClient.GetBuildAsync(update.BuildId)
             ?? throw new Exception($"Failed to find build {update.BuildId} for subscription {update.SubscriptionId}");
 
-        description
-            .AppendLine(GetStartMarker(update.SubscriptionId))
-            .AppendLine($"## From {update.SourceRepo}")
-            .AppendLine($"- **Subscription**: {update.SubscriptionId}")
-            .AppendLine($"- **Build**: {build.AzureDevOpsBuildNumber}")
-            .AppendLine($"- **Date Produced**: {build.DateProduced.ToUniversalTime():MMMM d, yyyy h:mm:ss tt UTC}")
-            .AppendLine($"- **Commit**: {build.Commit}")
-            .AppendLine($"- **Branch**: {build.GetBranch()}")
-            .AppendLine(GetEndMarker(update.SubscriptionId));
+        description.AppendLine(
+            $"""
+            {GetStartMarker(update.SubscriptionId)}
+            "## From {update.SourceRepo}
+            "- **Subscription**: {update.SubscriptionId}
+            "- **Build**: {build.AzureDevOpsBuildNumber}
+            "- **Date Produced**: {build.DateProduced.ToUniversalTime():MMMM d, yyyy h:mm:ss tt UTC}
+            "- **Commit**: {build.Commit}
+            "- **Branch**: {build.GetBranch()}
+            {GetEndMarker(update.SubscriptionId)}
+            """);
 
         return description.ToString();
     }
