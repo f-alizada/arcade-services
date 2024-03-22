@@ -11,6 +11,7 @@ using Maestro.Data;
 using Maestro.Data.Models;
 using Microsoft.DotNet.DarcLib;
 using Microsoft.Extensions.Logging;
+using Microsoft.TeamFoundation.Build.WebApi;
 using SubscriptionActorService.StateModel;
 
 #nullable enable
@@ -110,7 +111,7 @@ internal class PullRequestBuilder : IPullRequestBuilder
         string targetRepository,
         string newBranchName)
     {
-        StringBuilder description = GetDescriptionStringBuilder(currentDescription);
+        StringBuilder description = GetDescriptionStringBuilder("This pull request updates the following dependencies");
         int startingReferenceId = GetStartingReferenceId(description.ToString());
 
         // First run through non-coherency and then do a coherency
@@ -200,15 +201,29 @@ internal class PullRequestBuilder : IPullRequestBuilder
         UpdateAssetsParameters update,
         string targetBranch)
     {
-        return await CreateTitleWithRepositories($"[{targetBranch}] Code updates from ", [update.SubscriptionId]);
+        return await CreateTitleWithRepositories($"[{targetBranch}] Source changes from ", [update.SubscriptionId]);
     }
 
-    public Task<string> GenerateCodeFlowPullRequestDescriptionAsync(
+    public async Task<string> GenerateCodeFlowPullRequestDescriptionAsync(
         UpdateAssetsParameters update,
         string targetBranch)
     {
-        // TODO
-        return Task.FromResult("PR Description");
+        StringBuilder description = GetDescriptionStringBuilder("This pull request is bringing source changes from another repository.");
+
+        var build = await _barClient.GetBuildAsync(update.BuildId)
+            ?? throw new Exception($"Failed to find build {update.BuildId} for subscription {update.SubscriptionId}");
+
+        description
+            .AppendLine(GetStartMarker(update.SubscriptionId))
+            .AppendLine($"## From {update.SourceRepo}")
+            .AppendLine($"- **Subscription**: {update.SubscriptionId}")
+            .AppendLine($"- **Build**: {build.AzureDevOpsBuildNumber}")
+            .AppendLine($"- **Date Produced**: {build.DateProduced.ToUniversalTime():MMMM d, yyyy h:mm:ss tt UTC}")
+            .AppendLine($"- **Commit**: {build.Commit}")
+            .AppendLine($"- **Branch**: {build.GetBranch()}")
+            .AppendLine(GetEndMarker(update.SubscriptionId));
+
+        return description.ToString();
     }
 
     /// <summary>
@@ -230,8 +245,8 @@ internal class PullRequestBuilder : IPullRequestBuilder
 
         string sourceRepository = update.SourceRepo;
         Guid updateSubscriptionId = update.SubscriptionId;
-        string sectionStartMarker = $"[marker]: <> (Begin:{updateSubscriptionId})";
-        string sectionEndMarker = $"[marker]: <> (End:{updateSubscriptionId})";
+        string sectionStartMarker = GetStartMarker(updateSubscriptionId);
+        string sectionEndMarker = GetEndMarker(updateSubscriptionId);
         int sectionStartIndex = RemovePRDescriptionSection(description, sectionStartMarker, sectionEndMarker);
 
         var subscriptionSection = new StringBuilder()
@@ -451,15 +466,8 @@ internal class PullRequestBuilder : IPullRequestBuilder
         return subscription?.SourceRepository;
     }
 
-    private static StringBuilder GetDescriptionStringBuilder(string? description)
-    {
-        if (string.IsNullOrEmpty(description))
-        {
-            return new StringBuilder().AppendLine("This pull request updates the following dependencies").AppendLine();
-        }
-
-        return new StringBuilder(description);
-    }
+    private static StringBuilder GetDescriptionStringBuilder(string description)
+        => new StringBuilder(description).AppendLine().AppendLine();
 
     /// <summary>
     /// Either inserts a full list of the repos involved (in a shortened form)
@@ -502,4 +510,10 @@ internal class PullRequestBuilder : IPullRequestBuilder
 
         return $"{baseTitle} {string.Join(delimiter, repoNames.OrderBy(s => s))}";
     }
+
+    private static string GetStartMarker(Guid subscriptionId)
+        => $"[marker]: <> (Begin:{subscriptionId})";
+
+    private static string GetEndMarker(Guid subscriptionId)
+        => $"[marker]: <> (End:{subscriptionId})";
 }
