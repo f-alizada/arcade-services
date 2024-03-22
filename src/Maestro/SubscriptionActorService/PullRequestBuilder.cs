@@ -200,31 +200,30 @@ internal class PullRequestBuilder : IPullRequestBuilder
         UpdateAssetsParameters update,
         string targetBranch)
     {
-        return await CreateTitleWithRepositories($"[{targetBranch}] Source changes from ", [update.SubscriptionId]);
+        return await CreateTitleWithRepositories($"[{targetBranch}] Source code changes from ", [update.SubscriptionId]);
     }
 
     public async Task<string> GenerateCodeFlowPullRequestDescriptionAsync(
         UpdateAssetsParameters update,
         string targetBranch)
     {
-        StringBuilder description = GetDescriptionStringBuilder("This pull request is bringing source changes from another repository.");
-
         var build = await _barClient.GetBuildAsync(update.BuildId)
             ?? throw new Exception($"Failed to find build {update.BuildId} for subscription {update.SubscriptionId}");
 
-        description.AppendLine(
+        return
             $"""
             {GetStartMarker(update.SubscriptionId)}
-            "## From {update.SourceRepo}
+
+            This pull request is bringing source changes from **{update.SourceRepo}**.
+            
             "- **Subscription**: {update.SubscriptionId}
             "- **Build**: {build.AzureDevOpsBuildNumber}
             "- **Date Produced**: {build.DateProduced.ToUniversalTime():MMMM d, yyyy h:mm:ss tt UTC}
             "- **Commit**: {build.Commit}
             "- **Branch**: {build.GetBranch()}
-            {GetEndMarker(update.SubscriptionId)}
-            """);
 
-        return description.ToString();
+            {GetEndMarker(update.SubscriptionId)}
+            """;
     }
 
     /// <summary>
