@@ -11,6 +11,7 @@ using Maestro.Data;
 using Maestro.Data.Models;
 using Microsoft.AspNetCore.ApiVersioning;
 using Microsoft.AspNetCore.ApiVersioning.Swashbuckle;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.DotNet.DarcLib;
 using Microsoft.EntityFrameworkCore;
@@ -31,6 +32,7 @@ namespace Maestro.Web.Api.v2020_02_20.Controllers;
 /// <seealso cref="v2018_07_16.Controllers.ChannelsController"/>
 [Route("channels")]
 [ApiVersion("2020-02-20")]
+[AllowAnonymous]
 public class ChannelsController : v2018_07_16.Controllers.ChannelsController
 {
     private readonly BuildAssetRegistryContext _context;
