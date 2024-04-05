@@ -71,6 +71,15 @@ internal static class PcsConfiguration
         {
             builder.AddVmrInitialization(vmrUri);
         }
+        else
+        {
+            // This is expected in local flows and it's useful to learn about this early
+            if (!Directory.Exists(vmrPath))
+            {
+                throw new InvalidOperationException($"VMR not found at {vmrPath}. " +
+                    $"Either run the service in initialization mode or clone {vmrUri} into {vmrPath}.");
+            }
+        }
 
         if (addEndpointAuthentication)
         {
