@@ -6,7 +6,6 @@ using Maestro.Web.Api.v2018_07_16.Models;
 using Maestro.Web.Api.v2020_02_20.Models;
 using Microsoft.AspNetCore.ApiVersioning;
 using Microsoft.AspNetCore.ApiVersioning.Swashbuckle;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System;
@@ -23,7 +22,6 @@ namespace Maestro.Web.Api.v2020_02_20.Controllers;
 /// </summary>
 [Route("assets")]
 [ApiVersion("2020-02-20")]
-[AllowAnonymous]
 public class AssetsController : v2018_07_16.Controllers.AssetsController
 {
     public AssetsController(BuildAssetRegistryContext context)

@@ -5,7 +5,6 @@ using Maestro.Data;
 using Maestro.Web.Api.v2020_02_20.Models;
 using Microsoft.AspNetCore.ApiVersioning;
 using Microsoft.AspNetCore.ApiVersioning.Swashbuckle;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System;
@@ -17,7 +16,6 @@ namespace Maestro.Web.Api.v2020_02_20.Controllers;
 
 [Route("goals")]
 [ApiVersion("2020-02-20")]
-[AllowAnonymous]
 public class GoalController : v2019_01_16.Controllers.GoalController
 {
     public GoalController(BuildAssetRegistryContext context)

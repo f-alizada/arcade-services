@@ -18,7 +18,6 @@ using System.Net;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Internal;
 using Newtonsoft.Json.Linq;
-using Microsoft.AspNetCore.Authorization;
 
 namespace Maestro.Web.Api.v2020_02_20.Controllers;
 
@@ -27,7 +26,6 @@ namespace Maestro.Web.Api.v2020_02_20.Controllers;
 /// </summary>
 [Route("builds")]
 [ApiVersion("2020-02-20")]
-[AllowAnonymous]
 public class BuildsController : v2019_01_16.Controllers.BuildsController
 {
     private IBackgroundQueue Queue { get; }
