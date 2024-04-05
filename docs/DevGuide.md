@@ -34,7 +34,7 @@ It seems that calling `bootstrap.ps1` is not a one-time operation and needs to b
 
 ### Local developer workflow
 
-The guaranteed way to successfully (re-)deploy Maestro locally after you're iterating on the code is to:
+The guaranteed way (some steps might be extraneous but assured to work) to successfully (re-)deploy Maestro locally after you're iterating on the code is to:
 - Make sure you have run `bootstrap.ps1` after the last reboot
 - Reset the local SF cluster (`Service Fabric Local Cluster Manager` -> `Reset Local Cluster`)
 - Start the VS in Administrator mode
