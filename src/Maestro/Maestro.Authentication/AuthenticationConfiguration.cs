@@ -1,23 +1,22 @@
 ﻿// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using System.Threading.Tasks;
 using System;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.AspNetCore.Identity;
-using Maestro.Data;
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.Extensions.Configuration;
-using Microsoft.DotNet.Web.Authentication.AccessToken;
 using System.Linq;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.DotNet.Web.Authentication.GitHub;
 using System.Security.Claims;
+using System.Threading.Tasks;
+using Maestro.Data;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.DotNet.Web.Authentication;
+using Microsoft.DotNet.Web.Authentication.AccessToken;
+using Microsoft.DotNet.Web.Authentication.GitHub;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Maestro.Authentication;
@@ -34,17 +33,20 @@ public static class AuthenticationConfiguration
 
     public static void ConfigureAuthServices(this IServiceCollection services, bool requirePolicyRole, IConfigurationSection gitHubAuthenticationSection, string authenticationSchemeRequestPath)
     {
-        services.AddIdentity<ApplicationUser, IdentityRole<int>>(
-                options => { options.Lockout.AllowedForNewUsers = false; })
+        services
+            .AddIdentity<ApplicationUser, IdentityRole<int>>(options => options.Lockout.AllowedForNewUsers = false)
             .AddEntityFrameworkStores<BuildAssetRegistryContext>();
 
         services.AddAuthentication(options =>
-        {
-            options.DefaultAuthenticateScheme = options.DefaultChallengeScheme = options.DefaultScheme = "Contextual";
-            options.DefaultSignInScheme = IdentityConstants.ExternalScheme;
-        })
+            {
+                options.DefaultAuthenticateScheme = options.DefaultChallengeScheme = options.DefaultScheme = "Contextual";
+                options.DefaultSignInScheme = IdentityConstants.ExternalScheme;
+            })
             .AddPolicyScheme("Contextual", "Contextual",
-                policyOptions => { policyOptions.ForwardDefaultSelector = ctx => ctx.Request.Path.StartsWithSegments(authenticationSchemeRequestPath) ? PersonalAccessTokenDefaults.AuthenticationScheme : IdentityConstants.ApplicationScheme; })
+                policyOptions => policyOptions.ForwardDefaultSelector =
+                    ctx => ctx.Request.Path.StartsWithSegments(authenticationSchemeRequestPath)
+                        ? PersonalAccessTokenDefaults.AuthenticationScheme
+                        : IdentityConstants.ApplicationScheme)
             .AddPersonalAccessToken<ApplicationUser>(
                 options =>
                 {
@@ -100,7 +102,7 @@ public static class AuthenticationConfiguration
                         }
                     };
                 }).AddGitHubOAuth(gitHubAuthenticationSection, GitHubScheme);
-        
+
 
         services.ConfigureExternalCookie(
             options =>
