@@ -81,12 +81,12 @@ public static class Program
         services.AddSingleton<IProductConstructionServiceApi>(s =>
         {
             var config = s.GetRequiredService<IConfiguration>();
-            var baseUri = config.GetValue<string>("ProductConstructionService:BaseUri");
+            var uri = config.GetValue<string>("ProductConstructionService:Uri");
             var token = config.GetValue<string>("ProductConstructionService:Token");
 
             return string.IsNullOrEmpty(token)
-                ? ApiFactory.GetAnonymous(baseUri)
-                : ApiFactory.GetAuthenticated(baseUri, token);
+                ? ApiFactory.GetAnonymous(uri)
+                : ApiFactory.GetAuthenticated(uri, token);
         });
 
         services.AddMergePolicies();
