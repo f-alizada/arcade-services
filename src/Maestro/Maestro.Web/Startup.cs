@@ -263,7 +263,7 @@ public partial class Startup : StartupBase
             options.PreSerializeFilters.Add(
                 (doc, req) =>
                 {
-                    bool http = HostingEnvironment.IsDevelopment() && !ServiceFabricHelpers.RunningInServiceFabric();
+                    bool http = HostingEnvironment.IsDevelopment();
                     doc.Servers = new List<OpenApiServer>
                     {
                         new() {
