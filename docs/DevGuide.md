@@ -30,6 +30,30 @@
 
 After successfully running `bootstrap.ps1` running the `MaestroApplication` project via F5 in VS (launch as elevated) will run the application on `http://localhost:8080`.
 
+It seems that calling `bootstrap.ps1` is not a one-time operation and needs to be called every time you restart your machine.
+
+### Local developer workflow
+
+The guaranteed way to successfully (re-)deploy Maestro locally after you're iterating on the code is to:
+- Make sure you have run `bootstrap.ps1` after the last reboot
+- Reset the local SF cluster (`Service Fabric Local Cluster Manager` -> `Reset Local Cluster`)
+- Start the VS in Administrator mode
+- Start the `MaestroApplication` project in VS
+
+#### How to tell it's done
+- The Build log (in VS) shows
+  ```
+  3>Finished executing script 'Deploy-FabricApplication.ps1'
+  ```
+- The Service Fabric Tools log shows
+  ```
+  Something is taking too long, the application is still not ready.
+  Finished executing script 'Get-ServiceFabricApplicationStatus'.
+  Time elapsed: 00:00:41.8014175
+  The URL for the launch target is not set or is not an HTTP/HTTPS URL so the browser will not be opened.
+  ```
+- You can open `http://127.0.0.1:8088/swagger`
+
 ## Azure AppConfiguration
 
 Maestro.Web uses Azure AppConfiguration (AAC) to dynamically enable/disable automatic build to channel assignment. AAC works basically as a KeyVault, however it doesn't need to necessarily store secrets. We use Azure Managed Service Identity (AMSI) to authenticate to AAC. 
