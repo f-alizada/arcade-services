@@ -390,7 +390,15 @@ public partial class Startup : StartupBase
         app.UseEndpoints(e =>
         {
             e.MapRazorPages();
-            e.MapControllers();
+
+            if (HostingEnvironment.IsDevelopment())
+            {
+                e.MapControllers().AllowAnonymous();
+            }
+            else
+            {
+                e.MapControllers();
+            }
         });
     }
 
@@ -418,7 +426,14 @@ public partial class Startup : StartupBase
         app.UseAuthorization();
         app.UseEndpoints(e =>
         {
-            e.MapControllers();
+            if (HostingEnvironment.IsDevelopment())
+            {
+                e.MapControllers().AllowAnonymous();
+            }
+            else
+            {
+                e.MapControllers();
+            }
         });
     }
 
@@ -509,7 +524,15 @@ public partial class Startup : StartupBase
         app.UseEndpoints(e =>
             {
                 e.MapRazorPages();
-                e.MapControllers();
+
+                if (HostingEnvironment.IsDevelopment())
+                {
+                    e.MapControllers().AllowAnonymous();
+                }
+                else
+                {
+                    e.MapControllers();
+                }
             }
         );
         app.MapWhen(IsGet, AngularIndexHtmlRedirect);
