@@ -1,6 +1,7 @@
 ﻿// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 using Azure.Identity;
+using Microsoft.AspNetCore.HttpLogging;
 using ProductConstructionService.Api.Telemetry;
 using ProductConstructionService.Api.VirtualMonoRepo;
 using ProductConstructionService.Api.Queue;
@@ -49,9 +50,18 @@ internal static class PcsConfiguration
             builder.Configuration.AddAzureKeyVault(keyVaultUri, credential);
         }
 
-        string databaseConnectionString = builder.Configuration.GetRequiredValue(PcsConfiguration.DatabaseConnectionString);
+        string databaseConnectionString = builder.Configuration.GetRequiredValue(DatabaseConnectionString);
 
         builder.AddBuildAssetRegistry(databaseConnectionString);
+        builder.Services.AddHttpLogging(options =>
+        {
+            options.LoggingFields =
+                HttpLoggingFields.RequestPath
+                | HttpLoggingFields.RequestQuery
+                | HttpLoggingFields.ResponseStatusCode;
+            options.CombineLogs = true;
+        });
+
         builder.AddTelemetry();
         builder.AddVmrRegistrations(vmrPath, tmpPath);
         builder.AddGitHubClientFactory();
