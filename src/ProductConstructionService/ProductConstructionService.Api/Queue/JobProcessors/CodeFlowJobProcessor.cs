@@ -67,6 +67,7 @@ internal class CodeFlowJobProcessor(
                 hadUpdates = await _vmrForwardFlower.FlowForwardAsync(
                     subscription.TargetDirectory!,
                     build,
+                    subscription.TargetBranch,
                     codeflowJob.PrBranch,
                     cancellationToken);
             }
@@ -75,6 +76,7 @@ internal class CodeFlowJobProcessor(
                 (hadUpdates, targetRepo) = await _vmrBackFlower.FlowBackAsync(
                     subscription.SourceDirectory!,
                     build,
+                    subscription.TargetBranch,
                     codeflowJob.PrBranch,
                     cancellationToken);
             }

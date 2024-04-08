@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using LibGit2Sharp;
 using Microsoft.DotNet.Darc.Models.VirtualMonoRepo;
 using Microsoft.DotNet.DarcLib.Helpers;
 using Microsoft.DotNet.Maestro.Client.Models;
@@ -78,36 +79,54 @@ public interface IVmrBackFlower
         CancellationToken cancellationToken = default);
 }
 
-internal class VmrBackFlower(
-        IVmrInfo vmrInfo,
-        ISourceManifest sourceManifest,
-        IVmrDependencyTracker dependencyTracker,
-        IDependencyFileManager dependencyFileManager,
-        IRepositoryCloneManager repositoryCloneManager,
-        ILocalGitClient localGitClient,
-        ILocalGitRepoFactory localGitRepoFactory,
-        IVersionDetailsParser versionDetailsParser,
-        IVmrPatchHandler vmrPatchHandler,
-        IWorkBranchFactory workBranchFactory,
-        IBasicBarClient basicBarClient,
-        ILocalLibGit2Client libGit2Client,
-        ICoherencyUpdateResolver coherencyUpdateResolver,
-        IAssetLocationResolver assetLocationResolver,
-        IFileSystem fileSystem,
-        ILogger<VmrCodeFlower> logger)
-    : VmrCodeFlower(vmrInfo, sourceManifest, dependencyTracker, repositoryCloneManager, localGitClient, libGit2Client, localGitRepoFactory, versionDetailsParser, dependencyFileManager, coherencyUpdateResolver, assetLocationResolver, fileSystem, logger),
-    IVmrBackFlower
+internal class VmrBackFlower : VmrCodeFlower, IVmrBackFlower
 {
-    private readonly IVmrInfo _vmrInfo = vmrInfo;
-    private readonly ISourceManifest _sourceManifest = sourceManifest;
-    private readonly IVmrDependencyTracker _dependencyTracker = dependencyTracker;
-    private readonly ILocalGitClient _localGitClient = localGitClient;
-    private readonly ILocalGitRepoFactory _localGitRepoFactory = localGitRepoFactory;
-    private readonly IVmrPatchHandler _vmrPatchHandler = vmrPatchHandler;
-    private readonly IWorkBranchFactory _workBranchFactory = workBranchFactory;
-    private readonly IBasicBarClient _barClient = basicBarClient;
-    private readonly IFileSystem _fileSystem = fileSystem;
-    private readonly ILogger<VmrCodeFlower> _logger = logger;
+    private readonly IVmrInfo _vmrInfo;
+    private readonly ISourceManifest _sourceManifest;
+    private readonly IVmrDependencyTracker _dependencyTracker;
+    private readonly IVmrCloneManager _vmrCloneManager;
+    private readonly IRepositoryCloneManager _repositoryCloneManager;
+    private readonly ILocalGitClient _localGitClient;
+    private readonly ILocalGitRepoFactory _localGitRepoFactory;
+    private readonly IVmrPatchHandler _vmrPatchHandler;
+    private readonly IWorkBranchFactory _workBranchFactory;
+    private readonly IBasicBarClient _barClient;
+    private readonly IFileSystem _fileSystem;
+    private readonly ILogger<VmrCodeFlower> _logger;
+
+    public VmrBackFlower(
+            IVmrInfo vmrInfo,
+            ISourceManifest sourceManifest,
+            IVmrDependencyTracker dependencyTracker,
+            IDependencyFileManager dependencyFileManager,
+            IVmrCloneManager vmrCloneManager,
+            IRepositoryCloneManager repositoryCloneManager,
+            ILocalGitClient localGitClient,
+            ILocalGitRepoFactory localGitRepoFactory,
+            IVersionDetailsParser versionDetailsParser,
+            IVmrPatchHandler vmrPatchHandler,
+            IWorkBranchFactory workBranchFactory,
+            IBasicBarClient basicBarClient,
+            ILocalLibGit2Client libGit2Client,
+            ICoherencyUpdateResolver coherencyUpdateResolver,
+            IAssetLocationResolver assetLocationResolver,
+            IFileSystem fileSystem,
+            ILogger<VmrCodeFlower> logger)
+        : base(vmrInfo, sourceManifest, dependencyTracker, localGitClient, libGit2Client, localGitRepoFactory, versionDetailsParser, dependencyFileManager, coherencyUpdateResolver, assetLocationResolver, fileSystem, logger)
+    {
+        _vmrInfo = vmrInfo;
+        _sourceManifest = sourceManifest;
+        _dependencyTracker = dependencyTracker;
+        _vmrCloneManager = vmrCloneManager;
+        _repositoryCloneManager = repositoryCloneManager;
+        _localGitClient = localGitClient;
+        _localGitRepoFactory = localGitRepoFactory;
+        _vmrPatchHandler = vmrPatchHandler;
+        _workBranchFactory = workBranchFactory;
+        _barClient = basicBarClient;
+        _fileSystem = fileSystem;
+        _logger = logger;
+    }
 
     public Task<bool> FlowBackAsync(
         string mapping,
@@ -135,8 +154,44 @@ internal class VmrBackFlower(
         string targetBranch,
         CancellationToken cancellationToken = default)
     {
-        ILocalGitRepo targetRepo = await PrepareRepoAndVmr(mappingName, targetBranch, build.Commit, cancellationToken);
+        // Prepare the VMR
+        await _vmrCloneManager.PrepareVmrAsync(
+            [build.GetRepository()],
+            [build.Commit],
+            build.Commit,
+            cancellationToken);
+
+        // Prepare repo
         SourceMapping mapping = _dependencyTracker.GetMapping(mappingName);
+        var remotes = new[] { mapping.DefaultRemote, _sourceManifest.GetRepoVersion(mapping.Name).RemoteUri }
+            .Distinct()
+            .OrderRemotesByLocalPublicOther()
+            .ToList();
+
+        // Check out base branch first
+        ILocalGitRepo targetRepo = await _repositoryCloneManager.PrepareCloneAsync(
+            mapping,
+            remotes,
+            baseBranch,
+            cancellationToken);
+
+        // Now try to see if the target branch exists already
+        try
+        {
+            targetRepo = await _repositoryCloneManager.PrepareCloneAsync(
+                mapping,
+                remotes,
+                [targetBranch],
+                targetBranch,
+                cancellationToken);
+        }
+        catch (NotFoundException)
+        {
+            // This means the target branch does not exist yet
+            // We will create it off of the base branch
+            await targetRepo.CreateBranchAsync(targetBranch);
+        }
+
         Codeflow lastFlow = await GetLastFlowAsync(mapping, targetRepo, currentIsBackflow: true);
 
         var hadUpdates = await FlowBackAsync(
@@ -178,7 +233,7 @@ internal class VmrBackFlower(
         }
         else
         {
-            await CheckOutVmr(shaToFlow);
+            await _vmrCloneManager.PrepareVmrAsync(shaToFlow, CancellationToken.None);
         }
 
         var mapping = _dependencyTracker.GetMapping(mappingName);
@@ -247,6 +302,7 @@ internal class VmrBackFlower(
             .Select(VmrPatchHandler.GetExclusionRule)
             .ToList();
 
+        string newBranchName = currentFlow.GetBranchName();
         var patchName = _vmrInfo.TmpPath / $"{mapping.Name}-{Commit.GetShortSha(lastFlow.VmrSha)}-{Commit.GetShortSha(currentFlow.TargetSha)}.patch";
 
         // When flowing from the VMR, ignore all submodules
@@ -318,6 +374,7 @@ internal class VmrBackFlower(
                 targetRepo,
                 mapping,
                 /* TODO: Find a previous build? */ null,
+                baseBranch,
                 newBranchName,
                 discardPatches,
                 cancellationToken);
@@ -358,6 +415,7 @@ internal class VmrBackFlower(
         await targetRepo.CheckoutAsync(lastFlow.SourceSha);
 
         var patchName = _vmrInfo.TmpPath / $"{mapping.Name}-{Commit.GetShortSha(lastFlow.VmrSha)}-{Commit.GetShortSha(currentFlow.TargetSha)}.patch";
+        var branchName = currentFlow.GetBranchName();
         var prBanch = await _workBranchFactory.CreateWorkBranchAsync(targetRepo, branchName);
         _logger.LogInformation("Created temporary branch {branchName} in {repoDir}", branchName, targetRepo);
 
