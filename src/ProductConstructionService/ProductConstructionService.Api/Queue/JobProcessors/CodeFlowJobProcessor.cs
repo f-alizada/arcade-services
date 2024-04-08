@@ -4,6 +4,7 @@
 using Microsoft.DotNet.DarcLib;
 using Microsoft.DotNet.DarcLib.Helpers;
 using Microsoft.DotNet.DarcLib.VirtualMonoRepo;
+using Microsoft.DotNet.Maestro.Client;
 using Microsoft.DotNet.Maestro.Client.Models;
 using ProductConstructionService.Api.Queue.Jobs;
 
@@ -12,6 +13,7 @@ namespace ProductConstructionService.Api.Queue.JobProcessors;
 internal class CodeFlowJobProcessor(
         IVmrInfo vmrInfo,
         IBasicBarClient barClient,
+        IMaestroApi maestroApi,
         IVmrBackFlower vmrBackFlower,
         IVmrForwardFlower vmrForwardFlower,
         ILocalLibGit2Client gitClient,
@@ -21,6 +23,7 @@ internal class CodeFlowJobProcessor(
 {
     private readonly IVmrInfo _vmrInfo = vmrInfo;
     private readonly IBasicBarClient _barClient = barClient;
+    private readonly IMaestroApi _maestroApi = maestroApi;
     private readonly IVmrBackFlower _vmrBackFlower = vmrBackFlower;
     private readonly IVmrForwardFlower _vmrForwardFlower = vmrForwardFlower;
     private readonly ILocalLibGit2Client _gitClient = gitClient;
@@ -102,6 +105,17 @@ internal class CodeFlowJobProcessor(
         {
             await _gitClient.Push(targetRepo, codeflowJob.PrBranch, subscription.TargetRepository);
             scope.SetSuccess();
+        }
+
+        // When no PR is created yet, we notify Maestro that the branch is ready
+        if (codeflowJob.PrUrl == null)
+        {
+            _logger.LogInformation(
+                "Notifying Maestro that subscription code changes for {subscriptionId} are ready in local branch {branch}",
+                subscription.Id,
+                subscription.TargetBranch);
+
+            await _maestroApi.Subscriptions.TriggerSubscriptionAsync(codeflowJob.BuildId, subscription.Id, default);
         }
     }
 }
