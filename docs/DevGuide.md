@@ -39,7 +39,9 @@ The guaranteed way (some steps might be extraneous but assured to work) to succe
 - Start the VS in Administrator mode
 - Start the `MaestroApplication` project in VS
 
-In case you need to also run PCS locally, run `dotnet run` in `src/ProductConstructionService/ProductConstructionService.AppHost`.
+In case you need to also run PCS locally,
+- either run `dotnet run` in `src/ProductConstructionService/ProductConstructionService.AppHost`,
+- or open another instance of VS and F5 the `ProductConstructionService.AppHost` project.
 
 #### How to tell it's done
 - The Build log (in VS) shows
