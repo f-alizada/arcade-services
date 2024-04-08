@@ -24,15 +24,16 @@ public interface IVmrBackFlower
     /// <param name="targetRepo">Local checkout of the repository</param>
     /// <param name="shaToFlow">SHA to flow</param>
     /// <param name="buildToFlow">Build to flow</param>
-    /// <param name="newBranchName">New branch name</param>
-    /// <param name="targetBranch">Target branch to create the PR branch on top of</param>
+    /// <param name="baseBranch">If target branch does not exist, it is created off of this branch</param>
+    /// <param name="targetBranch">Target branch to make the changes on</param>
     /// <param name="discardPatches">Keep patch files?</param>
     Task<bool> FlowBackAsync(
         string mapping,
         NativePath targetRepo,
         string? shaToFlow,
         int? buildToFlow,
-        string? newBranchName,
+        string baseBranch,
+        string targetBranch,
         bool discardPatches = false,
         CancellationToken cancellationToken = default);
 
@@ -44,15 +45,16 @@ public interface IVmrBackFlower
     /// <param name="targetRepo">Local checkout of the repository</param>
     /// <param name="shaToFlow">SHA to flow</param>
     /// <param name="buildToFlow">Build to flow</param>
-    /// <param name="newBranchName">New branch name</param>
-    /// <param name="targetBranch">Target branch to create the PR branch on top of</param>
+    /// <param name="baseBranch">If target branch does not exist, it is created off of this branch</param>
+    /// <param name="targetBranch">Target branch to make the changes on</param>
     /// <param name="discardPatches">Keep patch files?</param>
     Task<bool> FlowBackAsync(
         string mapping,
         ILocalGitRepo targetRepo,
         string? shaToFlow,
         int? buildToFlow,
-        string? newBranchName,
+        string baseBranch,
+        string targetBranch,
         bool discardPatches = false,
         CancellationToken cancellationToken = default);
 
@@ -62,8 +64,8 @@ public interface IVmrBackFlower
     /// </summary>
     /// <param name="mappingName">Mapping to flow</param>
     /// <param name="build">Build to flow</param>
-    /// <param name="newBranchName">New branch name</param>
-    /// <param name="targetBranch">Target branch to create the PR branch on top of</param>
+    /// <param name="baseBranch">If target branch does not exist, it is created off of this branch</param>
+    /// <param name="targetBranch">Target branch to make the changes on</param>
     /// <returns>
     ///     Boolean whether there were any changes to be flown
     ///     and a path to the local repo where the new branch is created
@@ -71,7 +73,7 @@ public interface IVmrBackFlower
     Task<(bool HadUpdates, NativePath RepoPath)> FlowBackAsync(
         string mappingName,
         Build build,
-        string newBranchName,
+        string baseBranch,
         string targetBranch,
         CancellationToken cancellationToken = default);
 }
@@ -112,7 +114,8 @@ internal class VmrBackFlower(
         NativePath targetRepoPath,
         string? shaToFlow,
         int? buildToFlow,
-        string? branchName,
+        string baseBranch,
+        string targetBranch,
         bool discardPatches = false,
         CancellationToken cancellationToken = default)
         => FlowBackAsync(
@@ -120,14 +123,15 @@ internal class VmrBackFlower(
             _localGitRepoFactory.Create(targetRepoPath),
             shaToFlow,
             buildToFlow,
-            branchName,
+            baseBranch,
+            targetBranch,
             discardPatches,
             cancellationToken);
 
     public async Task<(bool HadUpdates, NativePath RepoPath)> FlowBackAsync(
         string mappingName,
         Build build,
-        string newBranchName,
+        string baseBranch,
         string targetBranch,
         CancellationToken cancellationToken = default)
     {
@@ -141,7 +145,8 @@ internal class VmrBackFlower(
             lastFlow,
             build.Commit,
             build,
-            newBranchName,
+            baseBranch,
+            targetBranch,
             true,
             cancellationToken);
 
@@ -153,7 +158,8 @@ internal class VmrBackFlower(
         ILocalGitRepo targetRepo,
         string? shaToFlow,
         int? buildToFlow,
-        string? newBranchName,
+        string baseBranch,
+        string targetBranch,
         bool discardPatches = false,
         CancellationToken cancellationToken = default)
     {
@@ -183,7 +189,8 @@ internal class VmrBackFlower(
             lastFlow,
             shaToFlow,
             build,
-            newBranchName,
+            baseBranch,
+            targetBranch,
             discardPatches,
             cancellationToken);
     }
@@ -194,7 +201,8 @@ internal class VmrBackFlower(
         Codeflow lastFlow,
         string shaToFlow,
         Build? build,
-        string? newBranchName,
+        string baseBranch,
+        string targetBranch,
         bool discardPatches,
         CancellationToken cancellationToken)
     {
@@ -204,7 +212,8 @@ internal class VmrBackFlower(
             targetRepo,
             mapping,
             build,
-            newBranchName,
+            baseBranch,
+            targetBranch,
             discardPatches,
             cancellationToken);
 
@@ -226,7 +235,8 @@ internal class VmrBackFlower(
         Codeflow currentFlow,
         ILocalGitRepo targetRepo,
         Build? build,
-        string newBranchName,
+        string baseBranch,
+        string targetBranch,
         bool discardPatches,
         CancellationToken cancellationToken)
     {
@@ -340,7 +350,8 @@ internal class VmrBackFlower(
         Codeflow currentFlow,
         ILocalGitRepo targetRepo,
         Build? build,
-        string branchName,
+        string baseBranch,
+        string targetBranch,
         bool discardPatches,
         CancellationToken cancellationToken)
     {

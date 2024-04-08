@@ -81,7 +81,8 @@ internal abstract class VmrCodeFlower
         ILocalGitRepo repo,
         SourceMapping mapping,
         Build? build,
-        string? branchName,
+        string baseBranch,
+        string targetBranch,
         bool discardPatches,
         CancellationToken cancellationToken = default)
     {

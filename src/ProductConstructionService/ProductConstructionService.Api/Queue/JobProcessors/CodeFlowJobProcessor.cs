@@ -68,7 +68,6 @@ internal class CodeFlowJobProcessor(
                     subscription.TargetDirectory!,
                     build,
                     codeflowJob.PrBranch,
-                    subscription.TargetBranch,
                     cancellationToken);
             }
             else
@@ -77,7 +76,6 @@ internal class CodeFlowJobProcessor(
                     subscription.SourceDirectory!,
                     build,
                     codeflowJob.PrBranch,
-                    subscription.TargetBranch,
                     cancellationToken);
             }
         }
