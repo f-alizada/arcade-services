@@ -64,6 +64,12 @@ public class LocalGitRepo(NativePath repoPath, ILocalGitClient localGitClient, I
     public async Task<string[]> GetStagedFiles()
         => await _localGitClient.GetStagedFiles(Path);
 
+    public async Task<string> GetConfigValue(string setting)
+        => await _localGitClient.GetConfigValue(Path, setting);
+
+    public async Task SetConfigValue(string setting, string value)
+        => await _localGitClient.SetConfigValue(Path, setting, value);
+
     public async Task ResetWorkingTree(UnixPath? relativePath = null)
         => await _localGitClient.ResetWorkingTree(new NativePath(Path), relativePath);
 

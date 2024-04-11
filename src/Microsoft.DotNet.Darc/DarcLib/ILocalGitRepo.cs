@@ -126,6 +126,20 @@ public interface ILocalGitRepo
     Task<GitObjectType> GetObjectTypeAsync(string objectSha);
 
     /// <summary>
+    /// Gets a value of a given git configuration setting.
+    /// </summary>
+    /// <param name="setting">Name of the setting</param>
+    /// <returns>Value of the setting</returns>
+    Task<string> GetConfigValue(string setting);
+
+    /// <summary>
+    /// Sets a value of a given git configuration setting.
+    /// </summary>
+    /// <param name="setting">Name of the setting</param>
+    /// <param name="value">New value</param>
+    Task SetConfigValue(string setting, string value);
+
+    /// <summary>
     ///     Returns a list of modified staged files.
     /// </summary>
     /// <returns>List of currently modified staged files</returns>

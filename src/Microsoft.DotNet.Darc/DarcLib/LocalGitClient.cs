@@ -442,4 +442,17 @@ public class LocalGitClient : ILocalGitClient
     {
         return await _processManager.ExecuteGit(repoPath, args, cancellationToken: cancellationToken);
     }
+
+    public async Task<string> GetConfigValue(string repoPath, string setting)
+    {
+        var res = await _processManager.ExecuteGit(repoPath, "config", setting);
+        res.ThrowIfFailed($"Failed to determine {setting} value for {repoPath}");
+        return res.StandardOutput.Trim();
+    }
+
+    public async Task SetConfigValue(string repoPath, string setting, string value)
+    {
+        var res = await _processManager.ExecuteGit(repoPath, "config", setting, value);
+        res.ThrowIfFailed($"Failed to set {setting} value to {value} for {repoPath}");
+    }
 }
