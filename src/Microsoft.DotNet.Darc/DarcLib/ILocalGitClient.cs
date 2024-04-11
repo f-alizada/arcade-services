@@ -135,6 +135,16 @@ public interface ILocalGitClient
     Task<string[]> GetStagedFiles(string repoPath);
 
     /// <summary>
+    /// Fetches from all remotes.
+    /// </summary>
+    /// <param name="repoPath">Path to a git repository</param>
+    /// <param name="remoteUris">List of remotes to fetch from</param>
+    Task FetchAllAsync(
+        string repoPath,
+        IReadOnlyCollection<string> remoteUris,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     ///     Stages files from the given path.
     /// </summary>
     /// <param name="repoPath">Path to a git repository</param>

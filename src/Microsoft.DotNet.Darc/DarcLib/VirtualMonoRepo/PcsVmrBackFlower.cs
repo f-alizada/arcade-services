@@ -79,6 +79,36 @@ internal class PcsVmrBackFlower : VmrBackFlower, IPcsVmrBackFlower
         string targetBranch,
         CancellationToken cancellationToken = default)
     {
+        (SourceMapping mapping, ILocalGitRepo targetRepo) = await PrepareVmrAndRepo(
+            mappingName,
+            build,
+            baseBranch,
+            targetBranch,
+            cancellationToken);
+
+        Codeflow lastFlow = await GetLastFlowAsync(mapping, targetRepo, currentIsBackflow: true);
+
+        var hadUpdates = await FlowBackAsync(
+            mapping,
+            targetRepo,
+            lastFlow,
+            build.Commit,
+            build,
+            baseBranch,
+            targetBranch,
+            true,
+            cancellationToken);
+
+        return (hadUpdates, targetRepo.Path);
+    }
+
+    private async Task<(SourceMapping, ILocalGitRepo)> PrepareVmrAndRepo(
+        string mappingName,
+        Build build,
+        string baseBranch,
+        string targetBranch,
+        CancellationToken cancellationToken)
+    {
         // Prepare the VMR
         await _vmrCloneManager.PrepareVmrAsync(
             [build.GetRepository()],
@@ -100,36 +130,26 @@ internal class PcsVmrBackFlower : VmrBackFlower, IPcsVmrBackFlower
             baseBranch,
             cancellationToken);
 
+        // Refresh the repo
+        await targetRepo.FetchAllAsync(remotes, cancellationToken);
+
         // Now try to see if the target branch exists already
         try
         {
             targetRepo = await _repositoryCloneManager.PrepareCloneAsync(
                 mapping,
                 remotes,
-                [targetBranch],
+                [baseBranch, targetBranch],
                 targetBranch,
                 cancellationToken);
         }
         catch (NotFoundException)
         {
-            // This means the target branch does not exist yet
-            // We will create it off of the base branch
+            // If target branch does not exist, we create it off of the base branch
+            await targetRepo.CheckoutAsync(baseBranch);
             await targetRepo.CreateBranchAsync(targetBranch);
         }
 
-        Codeflow lastFlow = await GetLastFlowAsync(mapping, targetRepo, currentIsBackflow: true);
-
-        var hadUpdates = await FlowBackAsync(
-            mapping,
-            targetRepo,
-            lastFlow,
-            build.Commit,
-            build,
-            baseBranch,
-            targetBranch,
-            true,
-            cancellationToken);
-
-        return (hadUpdates, targetRepo.Path);
+        return (mapping, targetRepo);
     }
 }

@@ -60,6 +60,12 @@ internal class GitOperationsHelper
         result.ThrowIfFailed($"Could not checkout {gitRef} in {repo}");
     }
 
+    public async Task DeleteBranch(NativePath repo, string branch)
+    {
+        var result = await _processManager.ExecuteGit(repo, "branch", "-D", branch);
+        result.ThrowIfFailed($"Could not delete branch {branch} in {repo}");
+    }
+
     public async Task InitializeSubmodule(
         NativePath repo,
         string submoduleName,
@@ -120,6 +126,7 @@ internal class GitOperationsHelper
         result.ThrowIfFailed($"Could not merge branch {branch} to {targetBranch} in {repo}");
 
         await CommitAll(repo, $"Merged branch {branch} into {targetBranch}");
+        await DeleteBranch(repo, branch);
     }
 
     private async Task ConfigureGit(NativePath repo)

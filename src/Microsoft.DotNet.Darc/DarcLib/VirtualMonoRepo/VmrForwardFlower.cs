@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using LibGit2Sharp;
 using Microsoft.DotNet.Darc.Models.VirtualMonoRepo;
 using Microsoft.DotNet.DarcLib.Helpers;
 using Microsoft.DotNet.Maestro.Client.Models;
@@ -46,9 +47,11 @@ public interface IVmrForwardFlower
 internal class VmrForwardFlower : VmrCodeFlower, IVmrForwardFlower
 {
     private readonly IVmrInfo _vmrInfo;
+    private readonly ISourceManifest _sourceManifest;
     private readonly IVmrUpdater _vmrUpdater;
     private readonly IVmrDependencyTracker _dependencyTracker;
     private readonly IVmrCloneManager _vmrCloneManager;
+    private readonly IRepositoryCloneManager _repositoryCloneManager;
     private readonly IBasicBarClient _barClient;
     private readonly ILocalGitRepoFactory _localGitRepoFactory;
     private readonly IProcessManager _processManager;
@@ -77,9 +80,11 @@ internal class VmrForwardFlower : VmrCodeFlower, IVmrForwardFlower
         : base(vmrInfo, sourceManifest, dependencyTracker, localGitClient, libGit2Client, localGitRepoFactory, versionDetailsParser, dependencyFileManager, coherencyUpdateResolver, assetLocationResolver, fileSystem, logger)
     {
         _vmrInfo = vmrInfo;
+        _sourceManifest = sourceManifest;
         _vmrUpdater = vmrUpdater;
         _dependencyTracker = dependencyTracker;
         _vmrCloneManager = vmrCloneManager;
+        _repositoryCloneManager = repositoryCloneManager;
         _barClient = basicBarClient;
         _localGitRepoFactory = localGitRepoFactory;
         _processManager = processManager;
@@ -97,6 +102,8 @@ internal class VmrForwardFlower : VmrCodeFlower, IVmrForwardFlower
         bool discardPatches = false,
         CancellationToken cancellationToken = default)
     {
+        await PrepareVmr(baseBranch, targetBranch, cancellationToken);
+
         Build? build = null;
         if (buildToFlow.HasValue)
         {
@@ -104,7 +111,12 @@ internal class VmrForwardFlower : VmrCodeFlower, IVmrForwardFlower
                 ?? throw new Exception($"Failed to find build with BAR ID {buildToFlow}");
         }
 
-        var sourceRepo = _localGitRepoFactory.Create(repoPath);
+        ILocalGitRepo sourceRepo = _localGitRepoFactory.Create(repoPath);
+        SourceMapping mapping = _dependencyTracker.GetMapping(mappingName);
+        ISourceComponent repoInfo = _sourceManifest.GetRepoVersion(mappingName);
+
+        // Refresh the repo
+        await sourceRepo.FetchAllAsync([mapping.DefaultRemote, repoInfo.RemoteUri], cancellationToken);
 
         // SHA comes either directly or from the build or if none supplied, from tip of the repo
         shaToFlow ??= build?.Commit;
@@ -117,7 +129,6 @@ internal class VmrForwardFlower : VmrCodeFlower, IVmrForwardFlower
             await sourceRepo.CheckoutAsync(shaToFlow);
         }
 
-        var mapping = _dependencyTracker.GetMapping(mappingName);
         Codeflow lastFlow = await GetLastFlowAsync(mapping, sourceRepo, currentIsBackflow: false);
 
         return await FlowCodeAsync(
@@ -130,6 +141,26 @@ internal class VmrForwardFlower : VmrCodeFlower, IVmrForwardFlower
             targetBranch,
             discardPatches,
             cancellationToken);
+    }
+
+    protected async Task PrepareVmr(string baseBranch, string targetBranch, CancellationToken cancellationToken)
+    {
+        // Prepare the VMR
+        try
+        {
+            await _vmrCloneManager.PrepareVmrAsync(
+                [_vmrInfo.VmrUri],
+                [baseBranch, targetBranch],
+                targetBranch,
+                cancellationToken);
+        }
+        catch (NotFoundException)
+        {
+            // This means the target branch does not exist yet
+            // We will create it off of the base branch
+            await LocalVmr.CheckoutAsync(baseBranch);
+            await LocalVmr.CreateBranchAsync(targetBranch);
+        }
     }
 
     protected override async Task<bool> SameDirectionFlowAsync(

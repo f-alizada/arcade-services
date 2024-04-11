@@ -140,6 +140,12 @@ public interface ILocalGitRepo
     Task SetConfigValue(string setting, string value);
 
     /// <summary>
+    /// Fetches from all remotes.
+    /// </summary>
+    /// <param name="remoteUris">List of remotes to fetch from</param>
+    Task FetchAllAsync(IReadOnlyCollection<string> remoteUris, CancellationToken cancellationToken = default);
+
+    /// <summary>
     ///     Returns a list of modified staged files.
     /// </summary>
     /// <returns>List of currently modified staged files</returns>

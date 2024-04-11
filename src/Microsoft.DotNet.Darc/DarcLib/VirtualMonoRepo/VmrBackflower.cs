@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using LibGit2Sharp;
 using Microsoft.DotNet.Darc.Models.VirtualMonoRepo;
 using Microsoft.DotNet.DarcLib.Helpers;
 using Microsoft.DotNet.Maestro.Client.Models;
@@ -146,16 +147,14 @@ internal class VmrBackFlower : VmrCodeFlower, IVmrBackFlower
 
         // SHA comes either directly or from the build or if none supplied, from tip of the VMR
         shaToFlow ??= build?.Commit;
-        if (shaToFlow is null)
-        {
-            shaToFlow = await _localGitClient.GetShaForRefAsync(_vmrInfo.VmrPath);
-        }
-        else
-        {
-            await _vmrCloneManager.PrepareVmrAsync(shaToFlow, CancellationToken.None);
-        }
+        (SourceMapping mapping, shaToFlow) = await PrepareVmrAndRepo(
+            mappingName,
+            targetRepo,
+            shaToFlow,
+            baseBranch,
+            targetBranch,
+            cancellationToken);
 
-        var mapping = _dependencyTracker.GetMapping(mappingName);
         Codeflow lastFlow = await GetLastFlowAsync(mapping, targetRepo, currentIsBackflow: true);
         return await FlowBackAsync(
             mapping,
@@ -398,5 +397,53 @@ internal class VmrBackFlower : VmrCodeFlower, IVmrBackFlower
         await targetRepo.ResetWorkingTree();
 
         return true;
+    }
+
+    private async Task<(SourceMapping, string)> PrepareVmrAndRepo(
+        string mappingName,
+        ILocalGitRepo targetRepo,
+        string? shaToFlow,
+        string baseBranch,
+        string targetBranch,
+        CancellationToken cancellationToken)
+    {
+        if (shaToFlow is null)
+        {
+            shaToFlow = await _localGitClient.GetShaForRefAsync(_vmrInfo.VmrPath);
+        }
+        else
+        {
+            await _vmrCloneManager.PrepareVmrAsync(shaToFlow, CancellationToken.None);
+        }
+
+        SourceMapping mapping = _dependencyTracker.GetMapping(mappingName);
+        ISourceComponent repoInfo = _sourceManifest.GetRepoVersion(mappingName);
+
+        // Refresh the repo
+        await targetRepo.FetchAllAsync([mapping.DefaultRemote, repoInfo.RemoteUri], cancellationToken);
+
+        var remotes = new[] { mapping.DefaultRemote, repoInfo.RemoteUri }
+            .Distinct()
+            .OrderRemotesByLocalPublicOther()
+            .ToArray();
+
+        try
+        {
+            // Try to see if both base and target branch are available
+            await _repositoryCloneManager.PrepareCloneAsync(
+                mapping,
+                remotes,
+                [baseBranch, targetBranch],
+                targetBranch,
+                cancellationToken);
+        }
+        catch (NotFoundException)
+        {
+            // If target branch does not exist, we create it off of the base branch
+            await targetRepo.CheckoutAsync(baseBranch);
+            await targetRepo.CreateBranchAsync(targetBranch);
+        };
+
+        return (mapping, shaToFlow);
     }
 }

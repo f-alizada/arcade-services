@@ -78,22 +78,7 @@ internal class PcsVmrForwardFlower : VmrForwardFlower, IPcsVmrForwardFlower
         string targetBranch,
         CancellationToken cancellationToken = default)
     {
-        // Prepare the VMR
-        try
-        {
-            await _vmrCloneManager.PrepareVmrAsync(
-                [_vmrInfo.VmrUri],
-                [baseBranch, targetBranch],
-                build.Commit,
-                cancellationToken);
-        }
-        catch (NotFoundException)
-        {
-            // This means the target branch does not exist yet
-            // We will create it off of the base branch
-            await LocalVmr.CheckoutAsync(baseBranch);
-            await LocalVmr.CreateBranchAsync(targetBranch);
-        }
+        await PrepareVmr(baseBranch, targetBranch, cancellationToken);
 
         // Prepare repo
         SourceMapping mapping = _dependencyTracker.GetMapping(mappingName);
