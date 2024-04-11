@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using LibGit2Sharp;
 using Microsoft.DotNet.Darc.Models.VirtualMonoRepo;
 using Microsoft.DotNet.DarcLib.Helpers;
 using Microsoft.DotNet.Maestro.Client.Models;
@@ -57,25 +56,6 @@ public interface IVmrBackFlower
         string baseBranch,
         string targetBranch,
         bool discardPatches = false,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Flows backward the code from the VMR to the target branch of a product repo.
-    /// This overload is used in the context of the PCS.
-    /// </summary>
-    /// <param name="mappingName">Mapping to flow</param>
-    /// <param name="build">Build to flow</param>
-    /// <param name="baseBranch">If target branch does not exist, it is created off of this branch</param>
-    /// <param name="targetBranch">Target branch to make the changes on</param>
-    /// <returns>
-    ///     Boolean whether there were any changes to be flown
-    ///     and a path to the local repo where the new branch is created
-    ///  </returns>
-    Task<(bool HadUpdates, NativePath RepoPath)> FlowBackAsync(
-        string mappingName,
-        Build build,
-        string baseBranch,
-        string targetBranch,
         CancellationToken cancellationToken = default);
 }
 
@@ -147,67 +127,6 @@ internal class VmrBackFlower : VmrCodeFlower, IVmrBackFlower
             discardPatches,
             cancellationToken);
 
-    public async Task<(bool HadUpdates, NativePath RepoPath)> FlowBackAsync(
-        string mappingName,
-        Build build,
-        string baseBranch,
-        string targetBranch,
-        CancellationToken cancellationToken = default)
-    {
-        // Prepare the VMR
-        await _vmrCloneManager.PrepareVmrAsync(
-            [build.GetRepository()],
-            [build.Commit],
-            build.Commit,
-            cancellationToken);
-
-        // Prepare repo
-        SourceMapping mapping = _dependencyTracker.GetMapping(mappingName);
-        var remotes = new[] { mapping.DefaultRemote, _sourceManifest.GetRepoVersion(mapping.Name).RemoteUri }
-            .Distinct()
-            .OrderRemotesByLocalPublicOther()
-            .ToList();
-
-        // Check out base branch first
-        ILocalGitRepo targetRepo = await _repositoryCloneManager.PrepareCloneAsync(
-            mapping,
-            remotes,
-            baseBranch,
-            cancellationToken);
-
-        // Now try to see if the target branch exists already
-        try
-        {
-            targetRepo = await _repositoryCloneManager.PrepareCloneAsync(
-                mapping,
-                remotes,
-                [targetBranch],
-                targetBranch,
-                cancellationToken);
-        }
-        catch (NotFoundException)
-        {
-            // This means the target branch does not exist yet
-            // We will create it off of the base branch
-            await targetRepo.CreateBranchAsync(targetBranch);
-        }
-
-        Codeflow lastFlow = await GetLastFlowAsync(mapping, targetRepo, currentIsBackflow: true);
-
-        var hadUpdates = await FlowBackAsync(
-            mapping,
-            targetRepo,
-            lastFlow,
-            build.Commit,
-            build,
-            baseBranch,
-            targetBranch,
-            true,
-            cancellationToken);
-
-        return (hadUpdates, targetRepo.Path);
-    }
-
     public async Task<bool> FlowBackAsync(
         string mappingName,
         ILocalGitRepo targetRepo,
@@ -250,7 +169,7 @@ internal class VmrBackFlower : VmrCodeFlower, IVmrBackFlower
             cancellationToken);
     }
 
-    private async Task<bool> FlowBackAsync(
+    protected async Task<bool> FlowBackAsync(
         SourceMapping mapping,
         ILocalGitRepo targetRepo,
         Codeflow lastFlow,

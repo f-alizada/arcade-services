@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using LibGit2Sharp;
 using Microsoft.DotNet.Darc.Models.VirtualMonoRepo;
 using Microsoft.DotNet.DarcLib.Helpers;
 using Microsoft.DotNet.Maestro.Client.Models;
@@ -15,6 +14,10 @@ using Microsoft.Extensions.Logging;
 #nullable enable
 namespace Microsoft.DotNet.DarcLib.VirtualMonoRepo;
 
+/// <summary>
+/// Class for flowing code from a source repo to the target branch of the VMR.
+/// This class is used in the context of darc CLI as some behaviours around repo preparation differ.
+/// </summary>
 public interface IVmrForwardFlower
 {
     /// <summary>
@@ -38,33 +41,14 @@ public interface IVmrForwardFlower
         string targetBranch,
         bool discardPatches = false,
         CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Flows forward the code from the source repo to the target branch of the VMR.
-    /// This overload is used in the context of the PCS.
-    /// </summary>
-    /// <param name="mappingName">Mapping to flow</param>
-    /// <param name="build">Build to flow</param>
-    /// <param name="baseBranch">If target branch does not exist, it is created off of this branch</param>
-    /// <param name="targetBranch">Target branch to make the changes on</param>
-    /// <returns>True when there were changes to be flown</returns>
-    Task<bool> FlowForwardAsync(
-        string mappingName,
-        Build build,
-        string baseBranch,
-        string targetBranch,
-        CancellationToken cancellationToken = default);
 }
 
-internal class VmrForwardFlower : VmrCodeFlower,
-    IVmrForwardFlower
+internal class VmrForwardFlower : VmrCodeFlower, IVmrForwardFlower
 {
     private readonly IVmrInfo _vmrInfo;
-    private readonly ISourceManifest _sourceManifest;
     private readonly IVmrUpdater _vmrUpdater;
     private readonly IVmrDependencyTracker _dependencyTracker;
     private readonly IVmrCloneManager _vmrCloneManager;
-    private readonly IRepositoryCloneManager _repositoryCloneManager;
     private readonly IBasicBarClient _barClient;
     private readonly ILocalGitRepoFactory _localGitRepoFactory;
     private readonly IProcessManager _processManager;
@@ -93,66 +77,14 @@ internal class VmrForwardFlower : VmrCodeFlower,
         : base(vmrInfo, sourceManifest, dependencyTracker, localGitClient, libGit2Client, localGitRepoFactory, versionDetailsParser, dependencyFileManager, coherencyUpdateResolver, assetLocationResolver, fileSystem, logger)
     {
         _vmrInfo = vmrInfo;
-        _sourceManifest = sourceManifest;
         _vmrUpdater = vmrUpdater;
         _dependencyTracker = dependencyTracker;
         _vmrCloneManager = vmrCloneManager;
-        _repositoryCloneManager = repositoryCloneManager;
         _barClient = basicBarClient;
         _localGitRepoFactory = localGitRepoFactory;
         _processManager = processManager;
         _workBranchFactory = workBranchFactory;
         _logger = logger;
-    }
-
-    public async Task<bool> FlowForwardAsync(
-        string mappingName,
-        Build build,
-        string baseBranch,
-        string targetBranch,
-        CancellationToken cancellationToken = default)
-    {
-        // Prepare the VMR
-        try
-        {
-            await _vmrCloneManager.PrepareVmrAsync(
-                [_vmrInfo.VmrUri],
-                [baseBranch, targetBranch],
-                build.Commit,
-                cancellationToken);
-        }
-        catch (NotFoundException)
-        {
-            // This means the target branch does not exist yet
-            // We will create it off of the base branch
-            await LocalVmr.CreateBranchAsync(targetBranch);
-        }
-
-        // Prepare repo
-        SourceMapping mapping = _dependencyTracker.GetMapping(mappingName);
-        var remotes = new[] { mapping.DefaultRemote, _sourceManifest.GetRepoVersion(mapping.Name).RemoteUri }
-            .Distinct()
-            .OrderRemotesByLocalPublicOther()
-            .ToList();
-
-        ILocalGitRepo sourceRepo = await _repositoryCloneManager.PrepareCloneAsync(
-            mapping,
-            remotes,
-            build.Commit,
-            cancellationToken);
-
-        Codeflow lastFlow = await GetLastFlowAsync(mapping, sourceRepo, currentIsBackflow: false);
-
-        return await FlowCodeAsync(
-            lastFlow,
-            new ForwardFlow(lastFlow.TargetSha, build.Commit),
-            sourceRepo,
-            mapping,
-            build,
-            baseBranch,
-            targetBranch,
-            discardPatches: true,
-            cancellationToken);
     }
 
     public async Task<bool> FlowForwardAsync(

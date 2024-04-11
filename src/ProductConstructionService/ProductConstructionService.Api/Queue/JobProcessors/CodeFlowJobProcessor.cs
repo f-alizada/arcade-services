@@ -14,8 +14,8 @@ internal class CodeFlowJobProcessor(
         IVmrInfo vmrInfo,
         IBasicBarClient barClient,
         IMaestroApi maestroApi,
-        IVmrBackFlower vmrBackFlower,
-        IVmrForwardFlower vmrForwardFlower,
+        IPcsVmrBackFlower vmrBackFlower,
+        IPcsVmrForwardFlower vmrForwardFlower,
         ILocalLibGit2Client gitClient,
         ITelemetryRecorder telemetryRecorder,
         ILogger<CodeFlowJobProcessor> logger)
@@ -24,8 +24,8 @@ internal class CodeFlowJobProcessor(
     private readonly IVmrInfo _vmrInfo = vmrInfo;
     private readonly IBasicBarClient _barClient = barClient;
     private readonly IMaestroApi _maestroApi = maestroApi;
-    private readonly IVmrBackFlower _vmrBackFlower = vmrBackFlower;
-    private readonly IVmrForwardFlower _vmrForwardFlower = vmrForwardFlower;
+    private readonly IPcsVmrBackFlower _vmrBackFlower = vmrBackFlower;
+    private readonly IPcsVmrForwardFlower _vmrForwardFlower = vmrForwardFlower;
     private readonly ILocalLibGit2Client _gitClient = gitClient;
     private readonly ITelemetryRecorder _telemetryRecorder = telemetryRecorder;
     private readonly ILogger<CodeFlowJobProcessor> _logger = logger;
