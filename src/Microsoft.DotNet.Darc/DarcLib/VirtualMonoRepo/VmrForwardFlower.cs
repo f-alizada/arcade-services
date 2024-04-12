@@ -175,7 +175,6 @@ internal class VmrForwardFlower : VmrCodeFlower, IVmrForwardFlower
         CancellationToken cancellationToken)
     {
         string branchName = currentFlow.GetBranchName();
-        await _workBranchFactory.CreateWorkBranchAsync(LocalVmr, branchName);
 
         List<AdditionalRemote> additionalRemotes =
         [
@@ -274,7 +273,6 @@ internal class VmrForwardFlower : VmrCodeFlower, IVmrForwardFlower
 
         var patchName = _vmrInfo.TmpPath / $"{targetBranch.Replace('/', '-')}.patch";
         var branchName = currentFlow.GetBranchName();
-        var prBanch = await _workBranchFactory.CreateWorkBranchAsync(LocalVmr, branchName);
 
         List<GitSubmoduleInfo> submodules =
         [

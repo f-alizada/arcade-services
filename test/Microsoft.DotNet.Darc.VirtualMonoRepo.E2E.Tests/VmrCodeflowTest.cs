@@ -61,6 +61,8 @@ internal class VmrCodeflowTest : VmrTestsBase
         // Backflow again - should be a no-op
         hadUpdates = await CallDarcBackflow(Constants.ProductRepoName, ProductRepoPath, branchName);
         hadUpdates.ShouldNotHaveUpdates();
+        await GitOperations.Checkout(ProductRepoPath, "main");
+        await GitOperations.DeleteBranch(ProductRepoPath, branchName);
 
         // Make a change in the VMR again
         hadUpdates = await ChangeVmrFileAndFlowIt("New content from the VMR again", branchName);
@@ -77,6 +79,8 @@ internal class VmrCodeflowTest : VmrTestsBase
         await GitOperations.VerifyMergeConflict(ProductRepoPath, branchName,
             mergeTheirs: true,
             expectedFileInConflict: _productRepoFileName);
+        await GitOperations.Checkout(ProductRepoPath, "main");
+        await GitOperations.DeleteBranch(ProductRepoPath, branchName);
 
         // We used the changes from the VMR - let's verify flowing to the VMR
         hadUpdates = await CallDarcForwardflow(Constants.ProductRepoName, ProductRepoPath, branchName);
@@ -185,6 +189,8 @@ internal class VmrCodeflowTest : VmrTestsBase
         // Flow again - should be a no-op
         hadUpdates = await CallDarcForwardflow(Constants.ProductRepoName, ProductRepoPath, branchName);
         hadUpdates.ShouldNotHaveUpdates();
+        await GitOperations.Checkout(VmrPath, "main");
+        await GitOperations.DeleteBranch(VmrPath, branchName);
 
         // Make a change in the repo again
         hadUpdates = await ChangeRepoFileAndFlowIt("New content in the individual repo again", branchName);
@@ -201,6 +207,8 @@ internal class VmrCodeflowTest : VmrTestsBase
         await GitOperations.VerifyMergeConflict(VmrPath, branchName,
             mergeTheirs: true,
             expectedFileInConflict: VmrInfo.SourcesDir / Constants.ProductRepoName / _productRepoFileName);
+        await GitOperations.Checkout(VmrPath, "main");
+        await GitOperations.DeleteBranch(VmrPath, branchName);
 
         // We used the changes from the repo - let's verify flowing back is a no-op
         hadUpdates = await CallDarcBackflow(Constants.ProductRepoName, ProductRepoPath, branchName);
@@ -221,6 +229,8 @@ internal class VmrCodeflowTest : VmrTestsBase
         // Flow again - should be a no-op
         hadUpdates = await CallDarcForwardflow(Constants.ProductRepoName, ProductRepoPath, branchName);
         hadUpdates.ShouldNotHaveUpdates();
+        await GitOperations.Checkout(VmrPath, "main");
+        await GitOperations.DeleteBranch(VmrPath, branchName);
 
         // Update a file in the repo
         await File.WriteAllTextAsync(_productRepoFilePath, "Change that will have a build");
@@ -402,12 +412,16 @@ internal class VmrCodeflowTest : VmrTestsBase
             mergeTheirs: true,
             expectedFileInConflict: _productRepoFileName);
         CheckFileContents(_productRepoFilePath, "New content from the VMR");
+        await GitOperations.Checkout(ProductRepoPath, "main");
+        await GitOperations.DeleteBranch(ProductRepoPath, backBranchName);
 
         // 7. The forward flow PR will have a conflict because it will expect the original content but we have the one from step 1
         await GitOperations.VerifyMergeConflict(VmrPath, forwardBranchName,
             mergeTheirs: true,
             expectedFileInConflict: VmrInfo.SourcesDir / Constants.ProductRepoName / _productRepoFileName);
         CheckFileContents(_productRepoVmrFilePath, "New content in the individual repo");
+        await GitOperations.Checkout(VmrPath, "main");
+        await GitOperations.DeleteBranch(VmrPath, forwardBranchName);
 
         // 10. Backflow again - technically
         await CallDarcBackflow(Constants.ProductRepoName, ProductRepoPath, branch: backBranchName);

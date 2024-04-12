@@ -255,7 +255,7 @@ internal class VmrBackFlower : VmrCodeFlower, IVmrBackFlower
         _logger.LogInformation("Created {count} patch(es)", patches.Count);
 
         await targetRepo.CheckoutAsync(lastFlow.TargetSha);
-        await _workBranchFactory.CreateWorkBranchAsync(targetRepo, newBranchName);
+        var workBranch = await _workBranchFactory.CreateWorkBranchAsync(targetRepo, newBranchName, targetBranch);
 
         // TODO https://github.com/dotnet/arcade-services/issues/3302: Remove VMR patches before we create the patches
 
@@ -293,7 +293,7 @@ internal class VmrBackFlower : VmrCodeFlower, IVmrBackFlower
                 mapping,
                 /* TODO: Find a previous build? */ null,
                 baseBranch,
-                newBranchName,
+                targetBranch,
                 discardPatches,
                 cancellationToken);
 
@@ -313,8 +313,9 @@ internal class VmrBackFlower : VmrCodeFlower, IVmrBackFlower
 
         await targetRepo.CommitAsync(commitMessage, allowEmpty: false, cancellationToken: cancellationToken);
         await targetRepo.ResetWorkingTree();
+        await workBranch.MergeBackAsync(commitMessage);
 
-        _logger.LogInformation("New branch {branch} with flown code is ready in {repoDir}", newBranchName, targetRepo);
+        _logger.LogInformation("Branch {branch} with code changes is ready in {repoDir}", targetBranch, targetRepo);
 
         return true;
     }
@@ -334,7 +335,7 @@ internal class VmrBackFlower : VmrCodeFlower, IVmrBackFlower
 
         var patchName = _vmrInfo.TmpPath / $"{mapping.Name}-{Commit.GetShortSha(lastFlow.VmrSha)}-{Commit.GetShortSha(currentFlow.TargetSha)}.patch";
         var branchName = currentFlow.GetBranchName();
-        var prBanch = await _workBranchFactory.CreateWorkBranchAsync(targetRepo, branchName);
+        IWorkBranch workBranch = await _workBranchFactory.CreateWorkBranchAsync(targetRepo, branchName, targetBranch);
         _logger.LogInformation("Created temporary branch {branchName} in {repoDir}", branchName, targetRepo);
 
         // We leave the inlined submodules in the VMR
@@ -395,6 +396,7 @@ internal class VmrBackFlower : VmrCodeFlower, IVmrBackFlower
 
         await targetRepo.CommitAsync(commitMessage, false, cancellationToken: cancellationToken);
         await targetRepo.ResetWorkingTree();
+        await workBranch.MergeBackAsync(commitMessage);
 
         return true;
     }
@@ -419,13 +421,13 @@ internal class VmrBackFlower : VmrCodeFlower, IVmrBackFlower
         SourceMapping mapping = _dependencyTracker.GetMapping(mappingName);
         ISourceComponent repoInfo = _sourceManifest.GetRepoVersion(mappingName);
 
-        // Refresh the repo
-        await targetRepo.FetchAllAsync([mapping.DefaultRemote, repoInfo.RemoteUri], cancellationToken);
-
         var remotes = new[] { mapping.DefaultRemote, repoInfo.RemoteUri }
             .Distinct()
             .OrderRemotesByLocalPublicOther()
             .ToArray();
+
+        // Refresh the repo
+        await targetRepo.FetchAllAsync(remotes, cancellationToken);
 
         try
         {
