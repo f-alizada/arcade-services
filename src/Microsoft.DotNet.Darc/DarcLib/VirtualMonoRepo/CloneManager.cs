@@ -121,7 +121,7 @@ public abstract class CloneManager
             var path = _clones[remoteUri];
             if (_fileSystem.DirectoryExists(path))
             {
-                return _clones[remoteUri];
+                return path;
             }
 
             _upToDateRepos.Remove(remoteUri);
@@ -129,7 +129,7 @@ public abstract class CloneManager
 
         var clonePath = _clones.TryGetValue(remoteUri, out var cachedPath)
             ? cachedPath
-            : _vmrInfo.TmpPath / dirName;
+            : GetClonePath(dirName);
 
         if (!_fileSystem.DirectoryExists(clonePath))
         {
@@ -155,4 +155,6 @@ public abstract class CloneManager
         _clones[remoteUri] = clonePath;
         return clonePath;
     }
+
+    protected virtual NativePath GetClonePath(string dirName) => _vmrInfo.TmpPath / dirName;
 }

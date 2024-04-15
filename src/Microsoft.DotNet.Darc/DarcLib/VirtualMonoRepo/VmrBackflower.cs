@@ -282,6 +282,7 @@ internal class VmrBackFlower : VmrCodeFlower, IVmrBackFlower
                 line => line.Contains(VersionDetailsParser.SourceElementName) && line.Contains(lastFlow.SourceSha),
                 lastFlow.TargetSha);
             await targetRepo.CheckoutAsync(previousRepoSha);
+            await targetRepo.CreateBranchAsync(targetBranch, overwriteExistingBranch: true);
 
             // Reconstruct the previous flow's branch
             var lastLastFlow = await GetLastFlowAsync(mapping, targetRepo, currentIsBackflow: true);
@@ -292,10 +293,14 @@ internal class VmrBackFlower : VmrCodeFlower, IVmrBackFlower
                 targetRepo,
                 mapping,
                 /* TODO: Find a previous build? */ null,
-                baseBranch,
+                targetBranch,
                 targetBranch,
                 discardPatches,
                 cancellationToken);
+
+            // The recursive call right above would returned checked out at targetBranch
+            // The original work branch from above is no longer relevant. We need to create it again
+            workBranch = await _workBranchFactory.CreateWorkBranchAsync(targetRepo, newBranchName, targetBranch);
 
             // The current patches should apply now
             foreach (VmrIngestionPatch patch in patches)

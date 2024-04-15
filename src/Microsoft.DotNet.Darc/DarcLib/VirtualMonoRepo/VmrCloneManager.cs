@@ -83,4 +83,6 @@ public class VmrCloneManager : CloneManager, IVmrCloneManager
             [checkoutRef],
             checkoutRef,
             cancellationToken);
+
+    protected override NativePath GetClonePath(string dirName) => _vmrInfo.VmrPath;
 }

@@ -225,6 +225,7 @@ internal class VmrForwardFlower : VmrCodeFlower, IVmrForwardFlower
                 line => line.Contains(lastFlow.SourceSha),
                 lastFlow.TargetSha);
             await _vmrCloneManager.PrepareVmrAsync(previousFlowTargetSha, cancellationToken);
+            await LocalVmr.CreateBranchAsync(targetBranch, overwriteExistingBranch: true);
 
             // Reconstruct the previous flow's branch
             var lastLastFlow = await GetLastFlowAsync(mapping, sourceRepo, currentIsBackflow: true);
@@ -234,8 +235,8 @@ internal class VmrForwardFlower : VmrCodeFlower, IVmrForwardFlower
                 sourceRepo,
                 mapping,
                 build,
-                branchName, // TODO: This is an interesting one - should we try to find a build for that previous SHA?
-                branchName,
+                targetBranch, // TODO: This is an interesting one - should we try to find a build for that previous SHA?
+                targetBranch,
                 discardPatches,
                 cancellationToken);
 
